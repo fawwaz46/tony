@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+
+# tony's own output, when reviewing this repo
+.tony/
+
+# local MCP tool state
+.project-planner/

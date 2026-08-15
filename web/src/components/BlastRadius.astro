@@ -1,0 +1,113 @@
+---
+import { KIND_LABEL, KIND_ORDER, fileId } from "../lib/diff";
+
+interface Props {
+  impacts: any[];
+  windows: Record<string, { start: number; lines: string[]; truncated: boolean; total: number } | null>;
+}
+const { impacts, windows } = Astro.props;
+
+const byPath = new Map<string, any[]>();
+for (const imp of impacts) {
+  if (!imp.path) continue;
+  if (!byPath.has(imp.path)) byPath.set(imp.path, []);
+  byPath.get(imp.path)!.push(imp);
+}
+
+const worstOf = (group: any[]) => Math.min(...group.map((i) => KIND_ORDER[i.kind] ?? 1));
+
+// Worst first: a reader who opens one file should open the one that breaks.
+const ordered = [...byPath.entries()]
+  .sort((a, b) => worstOf(a[1]) - worstOf(b[1]))
+  .map(([path, group], i) => {
+    const worst = Object.keys(KIND_ORDER).find((k) => KIND_ORDER[k] === worstOf(group))!;
+    const win = windows[path] ?? null;
+    const at = new Map<number, any[]>();
+    for (const imp of group) {
+      const line = typeof imp.line === "number" ? imp.line : 1;
+      if (!at.has(line)) at.set(line, []);
+      at.get(line)!.push(imp);
+    }
+    const rows =
+      win?.lines.map((text: string, n: number) => {
+        const lineNo = win.start + n;
+        return { lineNo, text, notes: at.get(lineNo) ?? [] };
+      }) ?? [];
+    const lastShown = win ? win.start + win.lines.length - 1 : 0;
+    return {
+      path,
+      group,
+      worst,
+      win,
+      rows,
+      i: i + 1,
+      sites: group.slice().sort((a, b) => (a.line ?? 1) - (b.line ?? 1)),
+      before: win ? win.start - 1 : 0,
+      after: win ? Math.max(0, win.total - lastShown) : 0,
+    };
+  });
+---
+
+{
+  ordered.map(({ path, group, worst, win, rows, i, sites, before, after }) => (
+    <details class={`file impacted ${worst}`} id={`impact-${fileId(path)}`} open={i === 1}>
+      <summary>
+        <span class="ix">[{String(i).padStart(2, "0")}]</span>
+        <span class={`st ${worst}`}>{KIND_LABEL[worst] ?? worst}</span>
+        <span class="fp">{path}</span>
+        <span class="nb">{group.length}</span>
+        <span class="cnt">not edited</span>
+      </summary>
+      <div class="jumps">
+        {group.length} impact site{group.length === 1 ? "" : "s"}:{" "}
+        {sites.map((imp: any) => (
+          <a class={`jump ${imp.kind ?? ""}`} href={`#imp-${fileId(path)}-${imp.line ?? 1}`}>
+            line {imp.line ?? 1}
+          </a>
+        ))}
+      </div>
+      <div class="hunk full">
+        {win === null ? (
+          <p class="bin">Source not available for this file.</p>
+        ) : (
+          <Fragment>
+            {before > 0 && (
+              <div class="l c elide">
+                <span class="g" />… {before} earlier line{before === 1 ? "" : "s"}
+              </div>
+            )}
+            {rows.map((r: any) => (
+              <Fragment>
+                {r.notes.map((imp: any) => (
+                  <div class={`ann imp ${imp.kind ?? ""}`}>
+                    <p class="t">
+                      {KIND_LABEL[imp.kind] ?? imp.kind}
+                      {imp.symbol && (
+                        <span class="via">
+                          via <code>{imp.symbol}</code>
+                          {imp.fromPath ? ` in ${imp.fromPath}` : ""}
+                        </span>
+                      )}
+                    </p>
+                    <p class="n">{imp.why}</p>
+                  </div>
+                ))}
+                <div
+                  class={`l c${r.notes.length > 0 ? " hit" : ""}`}
+                  id={`imp-${fileId(path)}-${r.lineNo}`}
+                >
+                  <span class="g">{r.lineNo}</span>{r.text || " "}
+                </div>
+              </Fragment>
+            ))}
+            {after > 0 && (
+              <div class="l c elide">
+                <span class="g" />… {after} later line{after === 1 ? "" : "s"}
+              </div>
+            )}
+          </Fragment>
+        )}
+      </div>
+    </details>
+  ))
+}

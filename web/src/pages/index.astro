@@ -1,0 +1,176 @@
+---
+import BlastRadius from "../components/BlastRadius.astro";
+import FileChanges from "../components/FileChanges.astro";
+import Walkthroughs from "../components/Walkthroughs.astro";
+import review from "../fixtures/review.json";
+import "../styles.css";
+
+// One payload, read at build time. When hosting lands this becomes a fetch by
+// id; nothing else on the page changes.
+const files = review.files ?? [];
+const annotations = review.annotations ?? [];
+const risks = review.risks ?? [];
+const impacts = (review.impacts ?? []).filter((i: any) => i.path);
+const walkthroughs = review.walkthroughs ?? [];
+const windows = review.impactWindows ?? {};
+
+const reached = new Set(impacts.map((i: any) => i.path)).size;
+const adds = files.reduce((n: number, f: any) => n + f.additions, 0);
+const dels = files.reduce((n: number, f: any) => n + f.deletions, 0);
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tony — {review.repo}</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="mh">
+          <span class="brand">tony</span>
+          <span class="rng">{review.range}</span>
+          <span class="repo">{review.repo}</span>
+        </div>
+        <h1>{review.intent || "No summary produced."}</h1>
+        <div class="meta">
+          <span>{files.length} files</span>
+          <span><b class="pos">+{adds}</b> <b class="neg">&minus;{dels}</b></span>
+          <span>{annotations.length} annotations</span>
+          <label class="toggle">
+            <input type="checkbox" id="riskToggle" /> potential risks ({risks.length})
+          </label>
+        </div>
+      </header>
+
+      <nav class="tabs-main">
+        <button class="mt" data-t="files" aria-selected="true">
+          File changes <span class="c">{files.length}</span>
+        </button>
+        <button class="mt" data-t="blast" aria-selected="false" disabled={reached === 0}>
+          Blast radius <span class="c">{reached}</span>
+        </button>
+        <button class="mt" data-t="walk" aria-selected="false" disabled={walkthroughs.length === 0}>
+          How it works <span class="c">{walkthroughs.length}</span>
+        </button>
+      </nav>
+
+      <div id="pane-files">
+        <FileChanges files={files} annotations={annotations} risks={risks} />
+      </div>
+
+      <div id="pane-blast" hidden>
+        <div class="stepper" id="stepper">
+          <button id="prevImp" aria-label="Previous impact">&#8249;</button>
+          <span id="impPos">impact 1 of {impacts.length}</span>
+          <button id="nextImp" aria-label="Next impact">&#8250;</button>
+          <span class="sh" id="impWhere"></span>
+        </div>
+        <BlastRadius impacts={impacts} windows={windows} />
+      </div>
+
+      <div id="pane-walk" hidden>
+        <Walkthroughs walkthroughs={walkthroughs} />
+      </div>
+    </div>
+
+    <script>
+      // Top-level tabs.
+      document.querySelectorAll(".mt").forEach((b) =>
+        b.addEventListener("click", () => {
+          const t = (b as HTMLElement).dataset.t;
+          document
+            .querySelectorAll(".mt")
+            .forEach((x) => x.setAttribute("aria-selected", String((x as HTMLElement).dataset.t === t)));
+          (document.getElementById("pane-files") as HTMLElement).hidden = t !== "files";
+          (document.getElementById("pane-blast") as HTMLElement).hidden = t !== "blast";
+          (document.getElementById("pane-walk") as HTMLElement).hidden = t !== "walk";
+        }),
+      );
+
+      // Walkthrough player: one step at a time.
+      document.querySelectorAll(".wt").forEach((wt) => {
+        const n = Number((wt as HTMLElement).dataset.n);
+        let at = 0;
+        const show = () => {
+          wt.querySelectorAll(".stepPanel").forEach((p) =>
+            p.classList.toggle("on", Number((p as HTMLElement).dataset.s) === at),
+          );
+          wt.querySelectorAll(".dot").forEach((d) =>
+            d.toggleAttribute("aria-current", Number((d as HTMLElement).dataset.s) === at),
+          );
+          wt.querySelector(".wpos")!.textContent = `step ${at + 1} of ${n}`;
+          (wt.querySelector(".wprev") as HTMLButtonElement).disabled = at === 0;
+          (wt.querySelector(".wnext") as HTMLButtonElement).disabled = at === n - 1;
+        };
+        const go = (i: number) => {
+          at = Math.max(0, Math.min(n - 1, i));
+          show();
+        };
+        (wt.querySelector(".wprev") as HTMLElement).onclick = () => go(at - 1);
+        (wt.querySelector(".wnext") as HTMLElement).onclick = () => go(at + 1);
+        wt.querySelectorAll(".dot").forEach((d) => {
+          (d as HTMLElement).onclick = () => go(Number((d as HTMLElement).dataset.s));
+        });
+        show();
+      });
+
+      // An impacted file is shown around its affected lines, but the reason may
+      // still be below the fold of its box. Scroll the box, never the page.
+      function frame(d: Element) {
+        const box = d.querySelector(".hunk.full") as HTMLElement | null;
+        const hit = d.querySelector(".l.hit") as HTMLElement | null;
+        if (box && hit) box.scrollTop = Math.max(0, hit.offsetTop - box.clientHeight / 3);
+      }
+      document.querySelectorAll("#pane-blast details.impacted").forEach((d) => {
+        if ((d as HTMLDetailsElement).open) frame(d);
+        d.addEventListener("toggle", () => {
+          if ((d as HTMLDetailsElement).open) frame(d);
+        });
+      });
+
+      // Walk impact sites with the < > arrows.
+      const SITES = [...document.querySelectorAll("#pane-blast .l.hit")] as HTMLElement[];
+      let at = -1;
+      function goto(i: number) {
+        if (!SITES.length) return;
+        at = (i + SITES.length) % SITES.length;
+        const el = SITES[at];
+        (el.closest("details") as HTMLDetailsElement).open = true;
+        SITES.forEach((s) => s.classList.remove("focus"));
+        el.classList.add("focus");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById("impPos")!.textContent = `impact ${at + 1} of ${SITES.length}`;
+        const f = el.closest("details")!.querySelector(".fp");
+        document.getElementById("impWhere")!.textContent = f ? f.textContent! : "";
+      }
+      document.getElementById("prevImp")?.addEventListener("click", () => goto(at - 1));
+      document.getElementById("nextImp")?.addEventListener("click", () => goto(at + 1));
+      document.addEventListener("keydown", (e) => {
+        if ((document.getElementById("pane-blast") as HTMLElement).hidden) return;
+        if (e.key === "]") goto(at + 1);
+        if (e.key === "[") goto(at - 1);
+      });
+
+      // Prev / New / Changes panes inside one annotation.
+      document.addEventListener("click", (e) => {
+        const b = (e.target as HTMLElement).closest(".pt") as HTMLElement | null;
+        if (!b) return;
+        const g = b.dataset.g;
+        const p = b.dataset.p;
+        document
+          .querySelectorAll(`.pt[data-g="${g}"]`)
+          .forEach((x) => x.setAttribute("aria-selected", String((x as HTMLElement).dataset.p === p)));
+        document.querySelectorAll(`.pane[data-g="${g}"]`).forEach((x) => {
+          (x as HTMLElement).hidden = (x as HTMLElement).dataset.p !== p;
+        });
+      });
+
+      // Risks are opt-in — this is a tool for understanding, not a review gate.
+      const rt = document.getElementById("riskToggle") as HTMLInputElement;
+      document.body.classList.add("risks-off");
+      rt.addEventListener("change", () => document.body.classList.toggle("risks-off", !rt.checked));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+---
+import Annotation from "./Annotation.astro";
+import { fileId } from "../lib/diff";
+import type { Block } from "../lib/diff";
+
+interface Props {
+  files: any[];
+  annotations: any[];
+  risks: any[];
+}
+const { files, annotations, risks } = Astro.props;
+
+// Blocks arrive resolved from the payload; this counts them, nothing more.
+const laid = files.map((f, i) => ({
+  f,
+  i: i + 1,
+  blocks: (f.blocks ?? []) as Block[],
+  noteCount: (f.blocks ?? []).filter((b: Block) => b.k !== "row").length,
+}));
+---
+
+{
+  laid.map(({ f, i, blocks, noteCount }) => (
+    <details class="file" id={`file-${fileId(f.path)}`} open={!f.binary && noteCount > 0}>
+      <summary>
+        <span class="ix">[{String(i).padStart(2, "0")}]</span>
+        <span class={`st ${f.status}`}>{f.status.slice(0, 3)}</span>
+        <span class="fp">{f.path}</span>
+        {f.oldPath && <span class="from">from {f.oldPath}</span>}
+        {noteCount > 0 && <span class="nb">{noteCount}</span>}
+        <span class="cnt">
+          <b class={f.additions ? "pos" : "z"}>+{f.additions}</b>{" "}
+          <b class={f.deletions ? "neg" : "z"}>&minus;{f.deletions}</b>
+        </span>
+      </summary>
+
+      {f.binary ? (
+        <p class="bin">Binary — not shown.</p>
+      ) : blocks.length === 0 ? (
+        <p class="bin">No textual changes.</p>
+      ) : (
+        <div class="hunk">
+          {blocks.map((b) =>
+            b.k === "row" ? (
+              <div class={`l ${b.cls}`}>
+                <span class="g">{b.g ?? ""}</span>{b.text || " "}
+              </div>
+            ) : (
+              <Annotation
+                item={b.k === "risk" ? risks[b.n] : annotations[b.n]}
+                risk={b.k === "risk"}
+                span={b.span}
+                tag={b.tag}
+              />
+            ),
+          )}
+        </div>
+      )}
+    </details>
+  ))
+}
