@@ -13,6 +13,7 @@
  * a database leak yields nothing that can be replayed.
  */
 import { neon } from "@neondatabase/serverless";
+import { env } from "./env";
 
 // Constructed on first query, not at import. `neon()` throws when the
 // connection string is missing, and eager construction meant importing this
@@ -24,7 +25,7 @@ let client: Sql | null = null;
 
 export const sql: Sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
   if (!client) {
-    const url = import.meta.env.DATABASE_URL;
+    const url = env("DATABASE_URL");
     if (!url) throw new Error("DATABASE_URL is not set");
     client = neon(url);
   }
@@ -32,7 +33,7 @@ export const sql: Sql = ((strings: TemplateStringsArray, ...values: unknown[]) =
 }) as Sql;
 
 export function databaseConfigured(): boolean {
-  return Boolean(import.meta.env.DATABASE_URL);
+  return Boolean(env("DATABASE_URL"));
 }
 
 /** JSON error body, so a fetch() caller never has to parse an HTML error page. */

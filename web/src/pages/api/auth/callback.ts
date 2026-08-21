@@ -6,6 +6,7 @@
  */
 import type { APIRoute } from "astro";
 import { SESSION_COOKIE, createSession, migrate, upsertUser } from "../../../server/db";
+import { env } from "../../../server/env";
 import { safeNext } from "../../../server/safe";
 
 export const prerender = false;
@@ -30,8 +31,8 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: import.meta.env.GITHUB_CLIENT_ID,
-      client_secret: import.meta.env.GITHUB_CLIENT_SECRET,
+      client_id: env("GITHUB_CLIENT_ID"),
+      client_secret: env("GITHUB_CLIENT_SECRET"),
       code,
       redirect_uri: new URL("/api/auth/callback", url.origin).toString(),
     }),

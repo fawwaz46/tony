@@ -15,11 +15,13 @@
  * older client-side format so the two stay legible to each other.
  */
 
+import { env } from "./env";
+
 let cached: CryptoKey | null = null;
 
 async function key(): Promise<CryptoKey> {
   if (cached) return cached;
-  const raw = import.meta.env.TONY_ENCRYPTION_KEY;
+  const raw = env("TONY_ENCRYPTION_KEY");
   if (!raw) throw new Error("TONY_ENCRYPTION_KEY is not set");
   const bytes = Uint8Array.from(atob(raw.replace(/-/g, "+").replace(/_/g, "/")), (c) =>
     c.charCodeAt(0),

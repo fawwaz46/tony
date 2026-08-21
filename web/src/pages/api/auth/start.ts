@@ -9,6 +9,7 @@
  */
 import type { APIRoute } from "astro";
 import { throttle } from "../../../server/db";
+import { env } from "../../../server/env";
 import { safeNext } from "../../../server/safe";
 
 export const prerender = false;
@@ -18,7 +19,7 @@ export const GET: APIRoute = ({ url, cookies, redirect, clientAddress }) => {
     return new Response("too many attempts", { status: 429 });
   }
 
-  const clientId = import.meta.env.GITHUB_CLIENT_ID;
+  const clientId = env("GITHUB_CLIENT_ID");
   // A misconfigured site should say so on a page the visitor can read, not
   // hand them a bare 500 from an endpoint they never chose to visit.
   if (!clientId) return redirect("/?error=unconfigured", 302);

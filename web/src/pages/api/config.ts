@@ -6,11 +6,12 @@
  * rotated without a CLI release.
  */
 import type { APIRoute } from "astro";
+import { env } from "../../server/env";
 
 export const prerender = false;
 
 export const GET: APIRoute = () =>
   new Response(
-    JSON.stringify({ githubClientId: import.meta.env.GITHUB_CLIENT_ID ?? "" }),
+    JSON.stringify({ githubClientId: env("GITHUB_CLIENT_ID") ?? "" }),
     { headers: { "Content-Type": "application/json" } },
   );
