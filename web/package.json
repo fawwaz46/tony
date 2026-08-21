@@ -4,10 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "npm run sync:install && astro build",
     "preview": "astro preview",
     "build:viewer": "esbuild src/renderer/local.ts --bundle --minify --format=iife --outfile=../src/tony_cli/assets/viewer.js && cp src/styles.css ../src/tony_cli/assets/viewer.css",
-    "test": "node test/render.xss.mjs"
+    "test": "node test/render.xss.mjs",
+    "sync:install": "cp ../install.sh public/install.sh 2>/dev/null || true"
   },
   "dependencies": {
     "@astrojs/vercel": "^8.0.0",
