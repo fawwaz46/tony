@@ -66,15 +66,59 @@ const when = (d: string) =>
         <h2 class="big">Everything you've published.</h2>
         <div class="rlist">
           {rows.map((r: any, i: number) => (
-            <a class="rrow" href={`/r/${r.id}`}>
-              <span class="ix">[{String(i + 1).padStart(2, "0")}]</span>
-              <span class="rrepo">{r.repo || "repo"}</span>
-              <span class="rrange">{r.range}</span>
-              <span class="rintent">{r.intent}</span>
-              <span class="rwhen">{when(r.created_at)}</span>
-            </a>
+            <div class="rrow" data-id={r.id}>
+              <a class="rmain" href={`/r/${r.id}`}>
+                <span class="ix">[{String(i + 1).padStart(2, "0")}]</span>
+                <span class="rrepo">{r.repo || "repo"}</span>
+                <span class="rrange">{r.range}</span>
+                <span class="rintent">{r.intent}</span>
+                <span class="rwhen">{when(r.created_at)}</span>
+              </a>
+              <div class="racts">
+                <button type="button" class="ract" data-copy-id={r.id}>Copy link</button>
+                <button type="button" class="ract danger" data-del-id={r.id}>Delete</button>
+              </div>
+            </div>
           ))}
         </div>
+
+        <script>
+          // Delete is destructive and unrecoverable, so it confirms once and
+          // says what it is deleting rather than "are you sure?".
+          document.querySelectorAll<HTMLButtonElement>("[data-del-id]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              const row = b.closest<HTMLElement>(".rrow")!;
+              const name = row.querySelector(".rrepo")?.textContent ?? "this review";
+              const range = row.querySelector(".rrange")?.textContent ?? "";
+              if (!confirm(`Delete the review of ${name} ${range}? The link stops working.`)) return;
+
+              b.disabled = true;
+              b.textContent = "Deleting…";
+              const resp = await fetch(`/api/reviews/${b.dataset.delId}`, { method: "DELETE" });
+              if (resp.ok) {
+                row.remove();
+              } else {
+                b.disabled = false;
+                b.textContent = "Delete";
+                alert("That could not be deleted. Try again.");
+              }
+            });
+          });
+
+          document.querySelectorAll<HTMLButtonElement>("[data-copy-id]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              const url = `${location.origin}/r/${b.dataset.copyId}`;
+              try {
+                await navigator.clipboard.writeText(url);
+                const was = b.textContent;
+                b.textContent = "Copied";
+                setTimeout(() => (b.textContent = was), 1500);
+              } catch {
+                prompt("Copy this link:", url);
+              }
+            });
+          });
+        </script>
       </section>
     )
   }

@@ -17,12 +17,20 @@ const here = Astro.url.pathname;
 
 let user = null;
 let exists = false;
+let published: string | null = null;
 try {
   user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
   if (user) {
     await migrate();
-    const rows = await sql`SELECT 1 FROM reviews WHERE id = ${id}`;
+    const rows = await sql`SELECT created_at FROM reviews WHERE id = ${id}`;
     exists = rows.length > 0;
+    if (exists) {
+      // A review describes a moment in a repository. Without a date a reader
+      // cannot tell whether it still describes the code they are looking at.
+      published = new Date(rows[0].created_at).toLocaleDateString(undefined, {
+        year: "numeric", month: "long", day: "numeric",
+      });
+    }
   }
 } catch {
   user = null;
@@ -55,6 +63,7 @@ try {
       </section>
     ) : (
       <>
+        <p class="cap rmeta">[ published {published} ]</p>
         <div id="review-root">
           <p class="rstate">[ loading… ]</p>
         </div>

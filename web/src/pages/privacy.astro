@@ -1,0 +1,78 @@
+---
+// Linked from the footer. The homepage tells people their code is stored
+// here; this is the page that says exactly what that means.
+import Shell from "../layouts/Shell.astro";
+---
+
+<Shell title="Privacy — tony" description="What tony stores, who can read it, and how to delete it.">
+  <section class="sec">
+    <p class="cap">[ privacy ]</p>
+    <h2 class="big">What tony stores.</h2>
+    <p class="body">
+      Written plainly, because you are trusting us with source code.
+    </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ reviewing locally ]</p>
+    <p class="body">
+      Running <code>tony --local</code> touches this site not at all. The diff
+      and the files being reviewed go to Anthropic, which writes the
+      explanation. The page is written to <code>.tony/</code> on your machine.
+      No account, nothing stored here.
+    </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ publishing ]</p>
+    <p class="body">
+      Publishing is the default. A published review carries the diff and
+      windows of the source around every line it explains. That is real source
+      code, and it is stored here.
+    </p>
+    <p class="body">
+      We also store your GitHub username, user id, and avatar URL; the repo
+      name, branch range, and one-line summary of each review; and a session
+      when you sign in. We never receive your GitHub password, and the GitHub
+      token from signing in is used once to ask who you are and then discarded.
+    </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ how it is protected ]</p>
+    <p class="body">
+      Reviews are encrypted before storage with AES-256-GCM and kept in a
+      private store that is not reachable by URL. Sign-in tokens are stored
+      only as hashes, so a copy of the database yields nothing that can be
+      replayed.
+    </p>
+    <p class="body">
+      <b>What that does not protect against:</b> tony holds the key. Anyone who
+      can run code on this server, and any lawful demand made to us, can reach
+      a review. This is protection against a leak, not against us. Do not
+      publish from a repository you could not share with us.
+    </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ who can read a review ]</p>
+    <p class="body">
+      Anyone signed in who has the link. Review ids are random and unguessable,
+      so a link is what grants access. Treat it like a password.
+    </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ deleting ]</p>
+    <p class="body">
+      Delete any review from <a href="/reviews">your reviews</a>, or run
+      <code> tony unpublish &lt;id&gt;</code>. Deleting removes the stored
+      review and its metadata, and the link stops working immediately. To
+      delete your account and everything in it, email us.
+    </p>
+    <p class="body">
+      Reviews are kept until you delete them. We do not sell anything, and
+      there is no advertising or third-party analytics on this site.
+    </p>
+  </section>
+</Shell>
