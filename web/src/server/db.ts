@@ -1,7 +1,8 @@
 /**
  * Postgres (Neon) for identity, sessions, and review metadata.
  *
- * Review bodies live in Vercel Blob, encrypted at rest under a server-held key
+ * Review bodies live in a private Vercel Blob store, encrypted at rest under
+ * a server-held key
  * (see crypto.ts). That is a deliberate step down from the earlier
  * zero-knowledge design: gating reads behind login and offering a history of
  * past reviews both require the server to be able to open a review. It
@@ -92,7 +93,7 @@ export async function migrate(): Promise<void> {
       files INTEGER NOT NULL DEFAULT 0,
       annotations INTEGER NOT NULL DEFAULT 0,
       size INTEGER NOT NULL,
-      blob_url TEXT NOT NULL,
+      blob_path TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   // Older rows predate the summary columns; adding them is idempotent.
@@ -101,6 +102,18 @@ export async function migrate(): Promise<void> {
     sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS files INTEGER NOT NULL DEFAULT 0`,
     sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS annotations INTEGER NOT NULL DEFAULT 0`,
   ]) await stmt;
+  // Earlier revisions stored a public blob URL; the store is private now and
+  // objects are addressed by pathname. Renaming is idempotent and a no-op on
+  // a database that never saw the old column.
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name = 'reviews' AND column_name = 'blob_url')
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name = 'reviews' AND column_name = 'blob_path')
+      THEN ALTER TABLE reviews RENAME COLUMN blob_url TO blob_path;
+      END IF;
+    END $$;`;
   await sql`CREATE INDEX IF NOT EXISTS reviews_by_user ON reviews (user_id, created_at DESC)`;
   migrated = true;
 }

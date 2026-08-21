@@ -7,7 +7,7 @@
  * DELETE is owner-only.
  */
 import type { APIRoute } from "astro";
-import { del } from "@vercel/blob";
+import { del, get } from "@vercel/blob";
 import { open } from "../../../server/crypto";
 import {
   SESSION_COOKIE, fail, migrate, sql, userForSession, userForToken, withDatabase,
@@ -33,13 +33,13 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
     await migrate();
     if (!(await reader(request, cookies))) return fail(401, "login required");
 
-    const rows = await sql`SELECT blob_url FROM reviews WHERE id = ${params.id}`;
+    const rows = await sql`SELECT blob_path FROM reviews WHERE id = ${params.id}`;
     if (!rows.length) return fail(404, "not found");
 
-    const blob = await fetch(rows[0].blob_url);
-    if (!blob.ok) return fail(404, "not found");
+    const blob = await get(rows[0].blob_path, { access: "private" });
+    if (!blob || blob.statusCode !== 200) return fail(404, "not found");
 
-    return new Response(await open(await blob.arrayBuffer()), {
+    return new Response(await open(await new Response(blob.stream).arrayBuffer()), {
       headers: {
         "Content-Type": "application/json",
         // Private: it is one user's source code, decrypted.
@@ -60,11 +60,11 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     if (!user) return fail(401, "login required");
 
     const rows = await sql`
-      SELECT blob_url, user_id FROM reviews WHERE id = ${params.id}`;
+      SELECT blob_path, user_id FROM reviews WHERE id = ${params.id}`;
     if (!rows.length) return fail(404, "not found");
     if (Number(rows[0].user_id) !== user.id) return fail(403, "not yours to delete");
 
-    await del(rows[0].blob_url).catch(() => {});
+    await del(rows[0].blob_path, { access: "private" }).catch(() => {});
     await sql`DELETE FROM reviews WHERE id = ${params.id}`;
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },

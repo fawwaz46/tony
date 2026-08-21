@@ -72,13 +72,13 @@ export const POST: APIRoute = async ({ request }) => {
     });
 
     await sql`
-      INSERT INTO reviews (id, user_id, repo, range, intent, files, annotations, size, blob_url)
+      INSERT INTO reviews (id, user_id, repo, range, intent, files, annotations, size, blob_path)
       VALUES (${id}, ${user.id},
               ${String(payload.repo ?? "")}, ${String(payload.range ?? "")},
               ${String(payload.intent ?? "")},
               ${Array.isArray(payload.files) ? payload.files.length : 0},
               ${Array.isArray(payload.annotations) ? payload.annotations.length : 0},
-              ${body.length}, ${blob.url})`;
+              ${body.length}, ${pathname})`;
 
     return new Response(JSON.stringify({ id }), {
       headers: { "Content-Type": "application/json" },
