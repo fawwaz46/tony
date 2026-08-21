@@ -14,8 +14,8 @@ import json
 import os
 from datetime import datetime, timezone
 
-from tony.render import itemsByPath, layout, parseReview
-from tony.source.local import splitDiffByFile
+from tony_cli.layout import itemsByPath, layout, parseReview
+from tony_cli.source.local import splitDiffByFile
 
 VERSION = 1
 

@@ -1,14 +1,15 @@
 """The pure functions behind the page.
 
-These decide which line numbers the reader is shown. `codeWindow` silently
-showing the wrong lines is the failure that would quietly destroy trust in a
+These decide which line numbers the reader is shown. A window silently holding
+the wrong lines is the failure that would quietly destroy trust in a
 walkthrough, so the off-by-one edges are pinned here.
 """
 
 import textwrap
 
-from tony.render import changedRuns, codeWindow, kindFor, spanFor
-from tony.source.local import splitDiffByFile
+from tony_cli.layout import changedRuns, kindFor, spanFor
+from tony_cli.payload import STEP_PAD, stepWindows, windowFor
+from tony_cli.source.local import splitDiffByFile
 
 
 def body(text):
@@ -167,69 +168,73 @@ def test_missing_kind_defaults_without_a_span():
     assert kindFor(None, None) == "changed"
 
 
-# --- codeWindow ------------------------------------------------------------
+# --- windows: which source lines a walkthrough step shows ------------------
 
 def writeSrc(tmp_path, name="a.py", n=20):
     (tmp_path / name).write_text("\n".join(f"line{i}" for i in range(1, n + 1)))
     return name
 
 
-def gutters(htmlOut):
-    import re
-    return [int(m) for m in re.findall(r'<span class="g">(\d+)</span>', htmlOut)]
+def window(tmp_path, name, lines):
+    """One step through the real path: stepWindows, exactly as the payload does."""
+    step = {"say": "s", "path": name, "lines": lines}
+    walked = stepWindows([{"steps": [step]}], str(tmp_path))
+    return walked[0]["steps"][0]["window"]
+
+
+def shown(win):
+    return list(range(win["start"], win["start"] + len(win["lines"])))
 
 
 def test_window_pads_two_lines_either_side(tmp_path):
-    name = writeSrc(tmp_path)
-    out = codeWindow(str(tmp_path), name, [10, 12])
-    assert gutters(out) == [8, 9, 10, 11, 12, 13, 14]
+    win = window(tmp_path, writeSrc(tmp_path), [10, 12])
+    assert STEP_PAD == 2
+    assert shown(win) == [8, 9, 10, 11, 12, 13, 14]
 
 
 def test_requested_lines_are_the_hot_ones(tmp_path):
-    name = writeSrc(tmp_path)
-    out = codeWindow(str(tmp_path), name, [10, 12])
-    hot = [
-        int(n) for n in __import__("re").findall(
-            r'<div class="l c hot"><span class="g">(\d+)</span>', out
-        )
-    ]
-    assert hot == [10, 11, 12]
+    win = window(tmp_path, writeSrc(tmp_path), [10, 12])
+    assert win["hot"] == [10, 12]
 
 
 def test_line_numbers_match_the_source_text(tmp_path):
-    name = writeSrc(tmp_path)
-    out = codeWindow(str(tmp_path), name, [10, 10])
-    # The gutter number and the text on that row must agree — this is the trust bug.
-    assert '<span class="g">10</span>line10' in out
+    win = window(tmp_path, writeSrc(tmp_path), [10, 10])
+    # The number and the text at that offset must agree — this is the trust bug.
+    assert win["lines"][10 - win["start"]] == "line10"
 
 
 def test_single_line_step_is_accepted(tmp_path):
-    name = writeSrc(tmp_path)
-    assert gutters(codeWindow(str(tmp_path), name, [3])) == [1, 2, 3, 4, 5]
+    assert shown(window(tmp_path, writeSrc(tmp_path), [3])) == [1, 2, 3, 4, 5]
 
 
 def test_window_clamps_at_the_top_of_the_file(tmp_path):
-    name = writeSrc(tmp_path)
-    assert gutters(codeWindow(str(tmp_path), name, [1, 2])) == [1, 2, 3, 4]
+    assert shown(window(tmp_path, writeSrc(tmp_path), [1, 2])) == [1, 2, 3, 4]
 
 
 def test_window_clamps_at_the_end_of_the_file(tmp_path):
-    name = writeSrc(tmp_path, n=20)
-    assert gutters(codeWindow(str(tmp_path), name, [19, 20])) == [17, 18, 19, 20]
+    assert shown(window(tmp_path, writeSrc(tmp_path, n=20), [19, 20])) == [17, 18, 19, 20]
 
 
 def test_range_past_the_end_of_the_file_does_not_invent_lines(tmp_path):
-    name = writeSrc(tmp_path, n=20)
-    assert gutters(codeWindow(str(tmp_path), name, [18, 40])) == [16, 17, 18, 19, 20]
+    win = window(tmp_path, writeSrc(tmp_path, n=20), [18, 40])
+    assert shown(win) == [16, 17, 18, 19, 20]
 
 
-def test_missing_file_says_so_instead_of_raising(tmp_path):
-    out = codeWindow(str(tmp_path), "nope.py", [1, 2])
-    assert "could not read" in out
+def test_missing_file_yields_no_window(tmp_path):
+    assert window(tmp_path, "nope.py", [1, 2]) is None
 
 
-def test_no_path_means_outside_the_codebase(tmp_path):
-    assert "outside the codebase" in codeWindow(str(tmp_path), None, None)
+def test_no_path_means_no_window(tmp_path):
+    step = {"say": "s"}
+    walked = stepWindows([{"steps": [step]}], str(tmp_path))
+    assert walked[0]["steps"][0]["window"] is None
+
+
+def test_truncation_is_announced(tmp_path):
+    name = writeSrc(tmp_path, n=200)
+    win = windowFor((tmp_path / name).read_text().split("\n"), 100, 100, 2)
+    assert win["truncated"] is True
+    assert win["total"] == 200
 
 
 # --- splitDiffByFile -------------------------------------------------------

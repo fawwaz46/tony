@@ -1,0 +1,92 @@
+---
+/**
+ * A published review.
+ *
+ * Reading requires an account — any account, since the unguessable id plus the
+ * link is what grants access. A signed-out visitor is sent to GitHub and comes
+ * back here rather than landing on the dashboard, so a shared link survives the
+ * detour.
+ */
+import Shell from "../../layouts/Shell.astro";
+import { SESSION_COOKIE, migrate, sql, userForSession } from "../../server/db";
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const here = Astro.url.pathname;
+
+let user = null;
+let exists = false;
+try {
+  user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
+  if (user) {
+    await migrate();
+    const rows = await sql`SELECT 1 FROM reviews WHERE id = ${id}`;
+    exists = rows.length > 0;
+  }
+} catch {
+  user = null;
+}
+---
+
+<Shell title="Review — tony" wide={true}>
+  {
+    !user ? (
+      <section class="sec" style="border:0">
+        <p class="cap">[ review · {id} ]</p>
+        <h2 class="big">Sign in to read this review.</h2>
+        <p class="body">
+          Reviews are readable by anyone with an account and the link. You'll come
+          straight back here.
+        </p>
+        <a class="btn" href={`/api/auth/start?next=${encodeURIComponent(here)}`}>
+          Sign in with GitHub
+        </a>
+      </section>
+    ) : !exists ? (
+      <section class="sec" style="border:0">
+        <p class="cap">[ review ]</p>
+        <h2 class="big">This review doesn't exist.</h2>
+        <p class="body">
+          It may have been deleted by whoever published it, or the link may be
+          incomplete.
+        </p>
+        <a class="btn quiet" href="/reviews">Your reviews</a>
+      </section>
+    ) : (
+      <>
+        <div id="review-root">
+          <p class="rstate">[ loading… ]</p>
+        </div>
+        <script define:vars={{ id }}>
+          window.__TONY_ID = id;
+        </script>
+        <script>
+          import { renderReview } from "../../renderer/render";
+
+          const root = document.getElementById("review-root")!;
+          const fail = (msg: string) => {
+            root.innerHTML = `<p class="rstate"><span class="err">${msg}</span></p>`;
+          };
+
+          (async () => {
+            const resp = await fetch(`/api/reviews/${(window as any).__TONY_ID}`);
+            if (resp.status === 401) {
+              location.href = `/api/auth/start?next=${encodeURIComponent(location.pathname)}`;
+              return;
+            }
+            if (!resp.ok) {
+              fail("this review could not be loaded.");
+              return;
+            }
+            try {
+              renderReview(root, await resp.json());
+            } catch {
+              fail("this review could not be displayed.");
+            }
+          })();
+        </script>
+      </>
+    )
+  }
+</Shell>

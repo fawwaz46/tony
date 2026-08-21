@@ -1,23 +1,39 @@
 import argparse
 import json
 import os
-import subprocess
 import sys
-import tempfile
 import webbrowser
 
 import anthropic
 from dotenv import load_dotenv
-from tony.payload import buildPayload, dumpPayload
-from tony.render import renderPage
-from tony.source.local import (
-    getDiff, globFiles, grepFiles, isDirty, readFile, resolveBase, resolveRepo,
-    resolveRev,
+from tony_cli import hosted
+from tony_cli.layout import parseReview
+from tony_cli.page import renderPage
+from tony_cli.payload import buildPayload, dumpPayload
+from tony_cli.source.local import (
+    confine, getDiff, globFiles, grepFiles, isDirty, readFile, resolveBase,
+    resolveRepo, resolveRev,
 )
 
-# tony runs from inside whatever repo it is reviewing, so the key has to be found
-# from the module's own location, not the cwd.
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env"))
+# The key comes from the environment first, then from ~/.tony/.env — a home
+# that is not inside any repo, so it can never be committed by accident.
+# Never from the repo being reviewed: tony should not be reading secrets out
+# of a project it is also summarising to an API.
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    load_dotenv(os.path.expanduser(os.path.join("~", ".tony", ".env")))
+
+MISSING_KEY = """\
+tony: ANTHROPIC_API_KEY is not set.
+
+  tony reviews your diff with Claude, which needs an Anthropic API key.
+  Get one at https://console.anthropic.com/settings/keys, then either:
+
+    export ANTHROPIC_API_KEY=sk-ant-...        # this shell only
+
+    mkdir -p ~/.tony && \\
+      echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.tony/.env    # every shell
+
+  A typical review costs well under a dollar; a very large diff costs more."""
 
 SYSTEM = """You explain code changes to the developer who is about to own them — often someone who did not type this code, because an AI wrote it. Your job is to build their mental map of what now exists, fast.
 
@@ -32,18 +48,18 @@ THE JSON BLOCK
 {
   "intent": "One sentence. What this change accomplishes, in plain language.",
   "annotations": [
-    {"path": "src/layouts/Layout.astro", "line": 22, "title": "Per-page canonical URL",
+    {"path": "billing/invoices.py", "line": 84, "title": "Idempotent invoice creation",
      "kind": "changed",
-     "prev": "Every page reported the site root as its own address, so a shared /mac link claimed to be the homepage.",
-     "now": "Builds the address from the current page's path, so each page advertises where it actually lives.",
-     "impact": "Link previews now resolve per page. Platforms key share counts on this value, so counts tied to the old address detach."},
-    {"path": "src/pages/mac.astro", "line": 10, "title": "Mac-specific preview card",
+     "prev": "Every call inserted a new row unconditionally, so a client that retried a timed-out request created a second invoice.",
+     "now": "Looks up the caller-supplied idempotency key first and returns the existing invoice when the key has been seen before.",
+     "impact": "Retries stop double-billing customers. Anything that counted invoice rows to measure volume now sees fewer of them."},
+    {"path": "billing/models.py", "line": 31, "title": "Idempotency key column",
      "kind": "added",
-     "now": "First consumer of the new props: the Mac page serves /mac-og.png with its own headline instead of the generic card."}
+     "now": "The unique column the lookup depends on. Existing rows keep NULL, which the unique index permits, so old data needs no backfill."}
   ],
   "risks": [
-    {"path": "src/layouts/Layout.astro", "line": 31,
-     "text": "The new 1800x945 dimensions apply to all five pages, but four still serve a 1200x630 image."}
+    {"path": "billing/invoices.py", "line": 90,
+     "text": "The key lookup and the insert are not one transaction, so two simultaneous retries can still race past each other and both insert."}
   ]
 }
 
@@ -83,9 +99,9 @@ IMPACTS — files this change reaches that are NOT in the diff.
 A diff shows what was edited. It cannot show what breaks. After you have written the annotations, grep for every consumer of anything whose shape changed — a signature, a prop, an export, a schema, a config key, a route, an environment variable — and record each place that now behaves differently.
 
 {"impacts": [
-  {"symbol": "Props", "fromPath": "src/layouts/Layout.astro",
-   "path": "src/pages/index.astro", "line": 3, "kind": "behavior-change",
-   "why": "Renders inside Layout, so it now emits the new 1800x945 image dimensions for an image that has not changed."}
+  {"symbol": "createInvoice", "fromPath": "billing/invoices.py",
+   "path": "dashboard/src/api/billing.ts", "line": 112, "kind": "behavior-change",
+   "why": "Calls the endpoint without an idempotency key, so it now takes the new code path where the server generates one per request."}
 ]}
 
 - `symbol` is the changed thing this file depends on. It must match something you described in an annotation, so the two can be linked.
@@ -119,18 +135,18 @@ Put them in the `walkthroughs` array:
 
 {"walkthroughs": [
   {
-    "title": "Turning the sound on",
-    "trigger": "You click the speaker button in the corner of the video",
-    "whatChanged": "Before this diff there was no way to turn the sound on at all — the video was permanently silent.",
+    "title": "Resuming a crashed export",
+    "trigger": "You run `export --resume` after the previous run died partway",
+    "whatChanged": "Before this diff a resumed export started over from the first record instead of picking up where it stopped.",
     "steps": [
-      {"say": "The button's click handler runs. It is the only thing on the page that can change the sound.",
-       "path": "src/components/MacAppSection.tsx", "lines": [14, 16],
-       "state": {"isMuted": "true", "video.muted": "true"},
+      {"say": "The CLI reads the checkpoint file the previous run left behind, which records the last record it managed to write.",
+       "path": "exporter/checkpoint.py", "lines": [22, 30],
+       "state": {"lastWritten": "4180", "cursor": "0"},
        "phase": "new"},
-      {"say": "It flips the remembered setting, then reaches into the actual video element and unmutes it directly.",
-       "path": "src/components/MacAppSection.tsx", "lines": [17, 19],
-       "state": {"isMuted": "true -> false", "video.muted": "true -> false"},
-       "phase": "new"}
+      {"say": "The database cursor opens at that position instead of at zero, so nothing already exported is fetched a second time.",
+       "path": "exporter/run.py", "lines": [57, 61],
+       "state": {"cursor": "0 -> 4180"},
+       "phase": "changed"}
     ]
   }
 ]}
@@ -215,7 +231,7 @@ GLOB_TOOL = {
         "properties": {
             "pattern": {
                 "type": "string",
-                "description": "Glob pattern, e.g. '*.astro' or 'src/**/*.ts'.",
+                "description": "Glob pattern, e.g. '*.py', '*.go', or 'src/**/*.ts'.",
             },
             "root": {
                 "type": "string",
@@ -258,10 +274,26 @@ TOOLS = {
     "grepFiles": grepFiles,
 }
 
-def runTool(name, toolInput):
+# Which argument of each tool names a path that must stay inside the repo.
+PATH_ARGS = {"getDiff": "repoPath", "readFile": "path", "globFiles": "root", "grepFiles": "root"}
+
+
+def runTool(name, toolInput, root):
     func = TOOLS.get(name)
     if func is None:
         return f"unknown tool: {name}"
+
+    # Tool inputs come from the model, and the model reads untrusted repo
+    # content. Whatever it asks for, it gets nothing outside the repo under
+    # review — there is no legitimate reason to read anywhere else, and the
+    # results of these calls are sent off-machine in the next API request.
+    arg = PATH_ARGS.get(name)
+    if arg and arg in toolInput:
+        inside = confine(root, str(toolInput[arg]))
+        if inside is None:
+            return f"refused: {toolInput[arg]} is outside the repository under review"
+        toolInput = {**toolInput, arg: inside}
+
     try:
         return func(**toolInput)
     except Exception as e:
@@ -335,7 +367,7 @@ def review(repoPath, base=None, head="HEAD", model=DEFAULT_MODEL,
             if block.type == "tool_use":
                 if verbose:
                     print(f"[{block.name}] {block.input}", file=sys.stderr)
-                result = runTool(block.name, block.input)
+                result = runTool(block.name, block.input, repoPath)
                 if block.name == "getDiff" and result.lstrip().startswith("diff --git "):
                     diff = result
                 results.append({
@@ -362,13 +394,16 @@ def checkWorkingTree(root, head):
     if wanted != resolveRev(root, "HEAD"):
         return (
             f"{head} is not checked out, so the code on disk is not the code being "
-            f"reviewed.\n       Run `git checkout {head}` first, or pass --stale to "
-            "review it anyway."
+            f"reviewed and every line tony showed you could be wrong.\n"
+            f"       Run `git checkout {head}` first, or pass --stale to accept "
+            "mismatched line numbers."
         )
     if isDirty(root):
         return (
-            "the working tree has uncommitted changes, so some lines shown may not "
-            "match the diff.\n       Commit or stash them, or pass --stale to continue."
+            "the working tree has uncommitted changes. tony reviews committed work, "
+            "and shows code straight from disk —\n       uncommitted edits would make "
+            "those lines lie. Commit or stash first (`git stash` restores with "
+            "`git stash pop`),\n       or pass --stale to accept possibly-wrong lines."
         )
     return None
 
@@ -384,52 +419,6 @@ def viewerFixture():
         os.path.join(here, "..", "..", "web", "src", "fixtures", "review.json")
     )
     return path if os.path.isdir(os.path.dirname(path)) else None
-
-
-def publish(page, name="tony"):
-    """Deploy one self-contained page to Vercel and return its URL.
-
-    The page carries its own CSS, fonts and data, so hosting is one static file
-    and there is nothing to store server-side. Each review is its own immutable
-    deployment: Vercel keeps them, so no database ever has to.
-
-    Deployments inherit the account's protection setting. Under Vercel
-    Authentication the link opens for the account owner and nobody else, which
-    is a dashboard toggle, not a code change.
-    """
-    with tempfile.TemporaryDirectory() as tmp:
-        # Vercel names the project after the directory, so all reviews land in one.
-        site = os.path.join(tmp, name)
-        os.makedirs(site)
-        with open(os.path.join(site, "index.html"), "w", encoding="utf-8") as fh:
-            fh.write(page)
-
-        try:
-            result = subprocess.run(
-                ["vercel", "deploy", "--yes"],
-                cwd=site, capture_output=True, text=True, timeout=300,
-            )
-        except FileNotFoundError:
-            return None, "the vercel CLI is not installed — npm i -g vercel"
-        except subprocess.TimeoutExpired:
-            return None, "vercel deploy timed out after 5 minutes"
-
-        if result.returncode != 0:
-            tail = (result.stderr or result.stdout).strip().splitlines()
-            return None, tail[-1] if tail else "vercel deploy failed"
-
-        # Recent CLI versions report a JSON object on stdout; older ones print
-        # the bare URL. Take the structured answer when it is there.
-        url = None
-        try:
-            url = json.loads(result.stdout).get("deployment", {}).get("url")
-        except (json.JSONDecodeError, AttributeError):
-            url = next(
-                (ln.strip() for ln in reversed(result.stdout.splitlines())
-                 if ln.strip().startswith("https://")),
-                None,
-            )
-        return (url, None) if url else (None, "vercel deploy printed no URL")
 
 
 def reportPath(repoPath, base, head, ext="html"):
@@ -463,6 +452,22 @@ def writeReport(path, page):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+
+    # Account commands, dispatched before argparse so `tony login` does not
+    # read as a repository path.
+    if argv[:1] == ["login"]:
+        return hosted.login()
+    if argv[:1] == ["logout"]:
+        return hosted.logout()
+    if argv[:1] == ["whoami"]:
+        return hosted.whoami()
+    if argv[:1] == ["unpublish"]:
+        if len(argv) != 2:
+            print("usage: tony unpublish <id>", file=sys.stderr)
+            return 2
+        return hosted.unpublish(argv[1])
+
     parser = argparse.ArgumentParser(
         prog="tony",
         description="Review a git diff for impact, not line-by-line.",
@@ -499,8 +504,9 @@ def main(argv=None):
         help="Write the page but do not open it in a browser.",
     )
     parser.add_argument(
-        "--publish", action="store_true",
-        help="Deploy the page to Vercel and print its URL.",
+        "--local", action="store_true",
+        help="Keep the review on this machine. Skips publishing, needs no account, "
+             "and opens the self-contained page in .tony/ instead of a link.",
     )
     parser.add_argument(
         "--payload", nargs="?", const=True, default=False, metavar="PATH",
@@ -550,14 +556,38 @@ def main(argv=None):
             print(f"tony: {problem}", file=sys.stderr)
             return 2
 
+    # Reviews publish by default, so the login is checked before the review
+    # runs — discovering it afterwards would waste an API call the user paid for.
+    if not args.local and not hosted.savedToken():
+        print(
+            "tony: you need to sign in before publishing a review.\n\n"
+            "    tony login          # once, with GitHub\n\n"
+            "  Or keep this one on your machine and skip the account:\n\n"
+            f"    tony {args.path} {args.range or ''} --local".rstrip() + "\n",
+            file=sys.stderr,
+        )
+        return 2
+
     if args.replay:
         if not os.path.exists(rawPath):
             print(f"tony: nothing saved for this range at {rawPath}", file=sys.stderr)
             return 2
         text, diff = loadRaw(rawPath)
     else:
+        # An empty range is the most common harmless mistake — a branch already
+        # merged, or a typo'd base. Catch it here rather than after paying for a
+        # review of nothing.
+        if not getDiff(root, base, head).strip():
+            print(
+                f"tony: {base}...{head} has no changes to review.\n"
+                "       Check the range — a branch that is already merged shows "
+                "nothing against its base.",
+                file=sys.stderr,
+            )
+            return 2
+
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            print("tony: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+            print(MISSING_KEY, file=sys.stderr)
             return 2
 
         print(f"tony: reviewing {base or 'default branch'}...{head} in {root}", file=sys.stderr)
@@ -577,19 +607,32 @@ def main(argv=None):
         print(text)
         return 1
 
+    if not parseReview(text):
+        # The model's answer had no usable JSON block — usually a response that
+        # hit the token ceiling. A page built from it would show a bare diff and
+        # look like a successful run. Fail loudly and keep the raw text instead.
+        keep = reportPath(root, base, head, ext="raw.txt")
+        os.makedirs(os.path.dirname(keep), exist_ok=True)
+        with open(keep, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(
+            "tony: the review came back unparseable, so no page was written.\n"
+            f"      The raw output is at {keep}. If it looks cut off, re-run "
+            "with a larger --max-tokens.",
+            file=sys.stderr,
+        )
+        return 1
+
+    rangeLabel = f"{base or 'default'}...{head}"
+    payloadJson = dumpPayload(buildPayload(text, diff, root, rangeLabel))
+
     path = reportPath(root, base, head)
-    page = renderPage(
-        text, diff, root,
-        title=f"tony — {os.path.basename(root)}",
-        rangeLabel=f"{base or 'default'}...{head}",
-    )
+    page = renderPage(payloadJson, title=f"tony — {os.path.basename(root)}")
     writeReport(path, page)
     if not args.replay:
         saveRaw(rawPath, text, diff)
 
     if args.payload or args.viewer:
-        blob = dumpPayload(buildPayload(text, diff, root, f"{base}...{head}"))
-
         targets = []
         if args.payload is True:
             targets.append(reportPath(root, base, head, ext="payload.json"))
@@ -606,22 +649,31 @@ def main(argv=None):
         for target in targets:
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "w", encoding="utf-8") as fh:
-                fh.write(blob)
+                fh.write(payloadJson)
             print(f"tony: {target}")
 
         if args.viewer and viewerFixture():
             print("tony: loaded into the viewer — npm run dev in web/, then refresh.")
 
-    if args.publish:
-        url, problem = publish(page)
+    # The local page is written either way: it costs nothing, works offline, and
+    # is the fallback when publishing fails so a paid-for review is never lost.
+    target = f"file://{path}"
+
+    if not args.local:
+        url, problem = hosted.publish(
+            payloadJson, repo=os.path.basename(root), rangeLabel=rangeLabel,
+        )
         if problem:
             print(f"tony: could not publish — {problem}", file=sys.stderr)
+            print(f"tony: the review is still here: {path}", file=sys.stderr)
         else:
-            print(f"tony: {url}")
+            print(url)
+            target = url
 
-    print(f"tony: {path}")
+    if args.local:
+        print(f"tony: {path}")
     if args.openPage:
-        webbrowser.open(f"file://{path}")
+        webbrowser.open(target)
     return 0
 
 

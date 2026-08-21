@@ -1,0 +1,71 @@
+---
+/**
+ * Page chrome: head, top bar, footer. Every page on the site uses it so the
+ * signed-in state is shown in exactly one place.
+ */
+import { SESSION_COOKIE, userForSession } from "../server/db";
+import "../styles.css";
+import "../site.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  wide?: boolean;
+}
+const { title, description = "", wide = false } = Astro.props;
+
+// A page that renders the bar needs to know who is looking at it. Failing
+// closed (logged out) keeps the site readable even if the database is down.
+let user = null;
+try {
+  user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
+} catch {
+  user = null;
+}
+const here = Astro.url.pathname + Astro.url.search;
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    <meta name="color-scheme" content="dark" />
+  </head>
+  <body>
+    <div class="wrap" style={wide ? "max-width:88rem" : undefined}>
+      <nav class="nav">
+        <a class="brand" href="/">tony</a>
+        <span class="spacer"></span>
+        {
+          user ? (
+            <>
+              <a class="link" href="/reviews">Reviews</a>
+              <span class="who">
+                {user.avatarUrl && <img src={user.avatarUrl} alt="" width="20" height="20" />}
+                {user.githubLogin}
+              </span>
+              <form method="POST" action="/api/auth/signout">
+                <button class="plain" type="submit">Sign out</button>
+              </form>
+            </>
+          ) : (
+            <a class="link" href={`/api/auth/start?next=${encodeURIComponent(here)}`}>
+              Sign in
+            </a>
+          )
+        }
+      </nav>
+
+      <slot />
+
+      <footer class="foot">
+        <span>tony</span>
+        <a href="https://github.com/fawwaz46/tony">GitHub</a>
+        <span class="spacer"></span>
+        <span>Reviews are stored encrypted and readable by your account.</span>
+      </footer>
+    </div>
+  </body>
+</html>

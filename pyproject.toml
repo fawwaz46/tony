@@ -1,15 +1,40 @@
 [project]
-name = "tony"
-version = "0.1.0"
-description = "Review a git diff for impact, not line-by-line."
+name = "tony-cli"
+version = "0.2.0"
+description = "Explains a git diff to whoever now owns it — annotated changes, blast radius, and steppable runtime walkthroughs."
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
+authors = [{ name = "Fawwaz Abayomi" }]
+keywords = ["git", "diff", "code-review", "ai", "claude"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "anthropic>=0.40",
     "python-dotenv>=1.0",
+    "httpx>=0.27",
+    "cryptography>=42",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/fawwaz46/tony"
+Issues = "https://github.com/fawwaz46/tony/issues"
+
 [project.scripts]
-tony = "tony.agent:main"
+tony = "tony_cli.agent:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -17,6 +42,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["tony_cli*"]
 
 [tool.setuptools.package-data]
-tony = ["assets/fonts/*.woff2"]
+tony_cli = ["assets/fonts/*.woff2", "assets/viewer.js", "assets/viewer.css"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]

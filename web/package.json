@@ -5,9 +5,18 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "build:viewer": "esbuild src/renderer/local.ts --bundle --minify --format=iife --outfile=../src/tony_cli/assets/viewer.js && cp src/styles.css ../src/tony_cli/assets/viewer.css",
+    "test": "node test/render.xss.mjs"
   },
   "dependencies": {
+    "@astrojs/vercel": "^8.0.0",
+    "@neondatabase/serverless": "^0.10.0",
+    "@vercel/blob": "^0.27.0",
     "astro": "^5.13.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "jsdom": "^25.0.0"
   }
 }

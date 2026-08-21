@@ -1,0 +1,43 @@
+# CI for tony's own repo: runs the test suite and proves the viewer bundle and
+# the site still build. Nothing here touches a user's repo — deploys of the
+# site happen through Vercel, and PyPI releases are a manual `python -m build`
+# + upload for now.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest src/tests -q
+
+  viewer-and-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+        working-directory: web
+      - run: npm run build:viewer
+        working-directory: web
+      # A hostile payload must never render as markup — any account can upload one.
+      - run: npm test
+        working-directory: web
+      # The committed bundle must match the source it claims to be built from.
+      - run: git diff --exit-code src/tony_cli/assets/viewer.js src/tony_cli/assets/viewer.css
+      - run: npm run build
+        working-directory: web

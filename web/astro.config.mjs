@@ -1,7 +1,11 @@
 import { defineConfig } from "astro/config";
+import vercel from "@astrojs/vercel";
 
 export default defineConfig({
-  // The page is text and code. No framework runtime ships — the tab and step
-  // players are the same vanilla JS the Python renderer used.
+  // Static by default; API routes and /r/<id> opt out with `prerender = false`.
+  // The review page itself is client-rendered — the server never holds the key
+  // that opens a review, so there is nothing it could render.
+  output: "static",
+  adapter: vercel(),
   build: { inlineStylesheets: "auto" },
 });

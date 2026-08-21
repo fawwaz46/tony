@@ -521,3 +521,75 @@ where effectiveness jumps), notional machines (novices lack a model of runtime, 
 self-explanation effect (high leverage but must be prompted), Mayer segmenting principle
 (user-paced steps beat one continuous presentation), and Multiple Coordinated Views 2025
 (synchronised code + state + plain language beats any single view).
+
+---
+
+## production build-out (done, 2026-08-16)
+
+The whole v1-production plan from the grill session, landed in one pass:
+
+- **One renderer.** `render.py` is deleted. The deterministic layer moved to
+  `src/tony_cli/layout.py` (unchanged logic, all 37 tests still pass); markup +
+  behaviour live once, in `web/src/renderer/render.ts`. The local page is that
+  bundle (built by `npm run build:viewer`, committed, CI-verified) inlined next
+  to the payload — 356 KB self-contained, verified interactive under jsdom.
+  The hosted page runs the identical bundle after decrypting.
+- **The tony site** (`web/`): `POST /api/reviews` (auth + 1 MB cap + 60/hr per
+  user), `GET/DELETE /api/reviews/[id]`, `POST /api/auth/github`, `/r/[id]`
+  client-side decrypt-and-render, landing page, `/dev` fixture viewer. Astro +
+  Vercel adapter; Neon Postgres for users/tokens/review metadata (all secrets
+  stored hashed), Vercel Blob for ciphertext. Needs env: DATABASE_URL,
+  BLOB_READ_WRITE_TOKEN, GITHUB_CLIENT_ID.
+- **Zero-knowledge publishing.** `hosted.py` encrypts with AES-256-GCM, key in
+  the URL fragment only. Round-trip pinned by test against the exact bytes the
+  browser's WebCrypto decrypt expects. `tony login` = GitHub device flow;
+  `tony unpublish <id> <token>` deletes. `--publish` preconditions are checked
+  before the API spend.
+- **Bugs fixed with tests:** unparseable review now exits 1 and keeps
+  `.tony/<range>.raw.txt` (was: blank page, exit 0); `resolveBase` returns
+  `origin/main` when only the remote ref exists (was: bare `main`, fatal on
+  repos with the local branch deleted); all four tools are path-confined to the
+  repo under review, symlinks resolved (was: model could read any file on disk).
+- **Packaging:** PyPI name `tony-cli` (bare `tony` is squatted), import package
+  `tony_cli`, command still `tony`. sdist + wheel both verified to carry fonts
+  and viewer bundle. README, MIT LICENSE (fonts excluded), classifiers,
+  `[dev]` extra, `install.sh` (prefers existing uv/pipx). CI: pytest on 3.10 +
+  3.13, viewer-bundle drift check, site build. 47 tests green.
+- **Key handling:** env var, then `~/.tony/.env`. The module-relative `.env`
+  lookup is gone. Missing-key message onboards.
+
+Still open before flipping the switch: create the GitHub OAuth app + Neon DB +
+Blob store and set the three env vars on Vercel; pick/buy the domain and bake
+it in as the TONY_API_URL default; publish 0.2.0 to PyPI; run one real
+`--publish` against the deployed site.
+
+### security pass (done, 2026-08-16)
+
+Prompted by "are all of those the only things blocking prod?" — they were not.
+
+- **Stored XSS in the renderer, fixed.** Any account could POST a crafted payload and send
+  the link; opening it signed in ran the attacker's JS on our origin in that session.
+  `esc()` was applied to textual fields but numbers and class names interpolated raw —
+  the TS types said `additions: number`, and JSON from the network does not honour those.
+  Six sinks (`additions`, `deletions`, gutter `g`, `impact.line`, `phase`, `cls`) plus a
+  second-order one where `reduce` string-concatenated the header totals. Now `esc()` /
+  `num()` / `cls()` on every interpolation, with `web/test/render.xss.mjs` rendering a
+  payload where every field is hostile. Wired into `npm test` and CI.
+- **Open redirect in the login `next` param, fixed.** The prefix check let `/\evil.com`
+  through (browsers normalise the backslash) and `/..//evil.com` (URL parsing normalises it
+  to the pathname `//evil.com`, which is same-origin at parse time and protocol-relative in
+  a Location header). Replaced with `safeNext` in `web/src/server/safe.ts`: resolve against
+  our origin, then re-resolve the answer and require it still points at us. 14 vectors tested.
+- **Upload validation.** `/api/reviews` now rejects non-object payloads and non-list
+  `files`/`annotations`/`risks`/`impacts`/`walkthroughs`, and caps `repo`/`range`/`intent`
+  before they reach Postgres and the dashboard.
+- **Auth throttling.** `/api/auth/github` (mints CLI tokens) at 10/min per IP,
+  `/api/auth/start` at 30/min. In-memory, so per-instance and a speed bump rather than a wall.
+- **Security headers** via `web/src/middleware.ts`: CSP, nosniff, no-referrer, DENY framing,
+  Permissions-Policy. CSP still carries `'unsafe-inline'` for scripts because Astro inlines
+  page scripts; moving to nonces is the follow-up.
+- **`/dev` 404s in production** rather than serving whatever fixture was last written locally.
+
+Still open: no per-review ownership check on read (deliberate — any account with the link
+can read), `migrate()` races on concurrent cold starts, sessions expire silently at 30 days,
+no delete-from-dashboard, no publisher attribution, no privacy policy, no 404 page.

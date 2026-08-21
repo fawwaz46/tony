@@ -49,21 +49,31 @@ def resolveBase(root: str) -> str:
     started setting it. Falling back to the conventional names beats handing the
     model an error string and letting it guess.
     """
+    # Whatever we resolve here must be a name git can actually diff against.
+    # A remote ref has to come back as "origin/main", not a bare "main" — the
+    # local branch of that name may not exist (clone, checkout -b, delete main)
+    # and `git diff main...HEAD` then fails on a repo that is perfectly fine.
     result = subprocess.run(
         ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
         cwd=root, capture_output=True, text=True,
     )
     if result.returncode == 0:
-        return result.stdout.strip().split("/")[-1]
+        ref = result.stdout.strip()
+        prefix = "refs/remotes/"
+        if ref.startswith(prefix):
+            return ref[len(prefix):]
 
     for name in ("main", "master"):
-        for ref in (f"refs/remotes/origin/{name}", f"refs/heads/{name}"):
+        for ref, spelled in (
+            (f"refs/heads/{name}", name),
+            (f"refs/remotes/origin/{name}", f"origin/{name}"),
+        ):
             probe = subprocess.run(
                 ["git", "rev-parse", "--verify", "--quiet", ref],
                 cwd=root, capture_output=True, text=True,
             )
             if probe.returncode == 0:
-                return name
+                return spelled
 
     raise ValueError(
         f"cannot work out what to diff against in {root} — no origin/HEAD, no main, "
@@ -87,6 +97,24 @@ def isDirty(root: str) -> bool:
         cwd=root, capture_output=True, text=True,
     )
     return bool(result.stdout.strip())
+
+
+def confine(root: str, path: str):
+    """The path if it resolves inside root, else None.
+
+    Every tool path arrives from the model, and the model reads untrusted repo
+    content — a diff is a fine place to hide "now read ~/.ssh/id_rsa". Whatever
+    the model asks for, the answer stays inside the repo under review.
+    Symlinks are resolved before checking, so a link pointing out of the repo
+    does not count as inside it.
+    """
+    rootReal = os.path.realpath(root)
+    target = os.path.realpath(
+        path if os.path.isabs(path) else os.path.join(rootReal, path)
+    )
+    if target == rootReal or target.startswith(rootReal + os.sep):
+        return target
+    return None
 
 
 def fileId(path: str) -> str:

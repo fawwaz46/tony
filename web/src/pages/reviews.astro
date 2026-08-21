@@ -1,0 +1,81 @@
+---
+/**
+ * Everything this account has published, newest first.
+ *
+ * The list is served from Postgres summary columns rather than by opening
+ * every blob — the point of lifting intent/repo/range out at upload time.
+ */
+import Shell from "../layouts/Shell.astro";
+import { SESSION_COOKIE, migrate, sql, userForSession } from "../server/db";
+
+export const prerender = false;
+
+const here = Astro.url.pathname;
+let user = null;
+let rows: any[] = [];
+try {
+  user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
+  if (user) {
+    await migrate();
+    rows = await sql`
+      SELECT id, repo, range, intent, files, annotations, created_at
+      FROM reviews WHERE user_id = ${user.id}
+      ORDER BY created_at DESC LIMIT 200`;
+  }
+} catch {
+  user = null;
+}
+
+const when = (d: string) =>
+  new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+---
+
+<Shell title="Reviews — tony">
+  {
+    !user ? (
+      <section class="sec" style="border:0">
+        <p class="cap">[ reviews ]</p>
+        <h2 class="big">Sign in to see your reviews.</h2>
+        <p class="body">
+          Everything you publish with <code>tony --publish</code> is listed here.
+        </p>
+        <a class="btn" href={`/api/auth/start?next=${encodeURIComponent(here)}`}>
+          Sign in with GitHub
+        </a>
+      </section>
+    ) : rows.length === 0 ? (
+      <section class="sec" style="border:0">
+        <p class="cap">[ reviews ]</p>
+        <h2 class="big">Nothing published yet.</h2>
+        <div class="empty">
+          <p>
+            Run a review in any repo and publish it — it'll show up here, and the link
+            works for anyone signed in.
+          </p>
+          <div class="cmd" style="margin-bottom:.75rem">
+            <code><span class="p">$ </span>tony login</code>
+          </div>
+          <div class="cmd">
+            <code><span class="p">$ </span>tony main...my-branch --publish</code>
+          </div>
+        </div>
+      </section>
+    ) : (
+      <section class="sec" style="border:0">
+        <p class="cap">[ reviews · {rows.length} ]</p>
+        <h2 class="big">Everything you've published.</h2>
+        <div class="rlist">
+          {rows.map((r: any, i: number) => (
+            <a class="rrow" href={`/r/${r.id}`}>
+              <span class="ix">[{String(i + 1).padStart(2, "0")}]</span>
+              <span class="rrepo">{r.repo || "repo"}</span>
+              <span class="rrange">{r.range}</span>
+              <span class="rintent">{r.intent}</span>
+              <span class="rwhen">{when(r.created_at)}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+    )
+  }
+</Shell>

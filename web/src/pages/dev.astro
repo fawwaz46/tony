@@ -1,0 +1,31 @@
+---
+// The development viewer: renders src/fixtures/review.json through the same
+// renderer as everything else. `tony --viewer` in any repo overwrites the
+// fixture, and the dev server reloads with it.
+import review from "../fixtures/review.json";
+import "../styles.css";
+
+// A development aid, not a page. `tony --viewer` writes the fixture this
+// renders, so in production it would just serve whatever review was last
+// loaded locally.
+export const prerender = false;
+if (import.meta.env.PROD) return new Response("Not found", { status: 404 });
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tony — dev viewer</title>
+  </head>
+  <body>
+    <div id="tony-root"></div>
+    <script type="application/json" id="tony-payload" set:html={JSON.stringify(review)} />
+    <script>
+      import { renderReview } from "../renderer/render";
+      const root = document.getElementById("tony-root")!;
+      const data = document.getElementById("tony-payload")!;
+      renderReview(root, JSON.parse(data.textContent || "{}"));
+    </script>
+  </body>
+</html>

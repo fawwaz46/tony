@@ -1,0 +1,136 @@
+/* Marketing and app chrome.
+   Tokens come from styles.css, which is also the review renderer's stylesheet;
+   nothing here is copied into the local page. This is the one place the camel
+   accent is allowed to mean "primary action" rather than "changed" — a
+   deliberate relaxation of DESIGN.md's one rule, scoped to site chrome so the
+   app itself keeps the rule intact. */
+
+/* ---- top bar ---- */
+.nav {
+  display: flex; align-items: center; gap: 1.25rem;
+  padding: 1.1rem 0; border-bottom: 1px solid var(--rule);
+}
+.nav .brand { font-family: var(--mono); font-weight: 500; font-size: .72rem;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--ink);
+  text-decoration: none; }
+.nav .spacer { margin-left: auto; }
+.nav a.link { font-family: var(--mono); font-size: .68rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-4); text-decoration: none; }
+.nav a.link:hover { color: var(--ink-2); }
+.nav .who { display: flex; align-items: center; gap: .5rem; font-family: var(--mono);
+  font-size: .68rem; color: var(--ink-3); }
+.nav .who img { width: 20px; height: 20px; border: 1px solid var(--rule-2); }
+.nav form { margin: 0; }
+.nav button.plain { background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: var(--mono); font-size: .68rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-4); }
+.nav button.plain:hover { color: var(--ink-2); }
+
+/* ---- buttons: the relaxed accent ---- */
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font: 500 .68rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+  padding: .8rem 1.15rem; border: 1px solid var(--accent-line);
+  background: var(--accent-bg); color: var(--accent);
+  text-decoration: none; cursor: pointer;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.btn.quiet { background: none; border-color: var(--rule-2); color: var(--ink-3); }
+.btn.quiet:hover { border-color: var(--rule-3); color: var(--ink); }
+
+/* ---- hero ---- */
+.hero { padding: 5rem 0 3.5rem; border-bottom: 1px solid var(--rule); }
+.hero h1 { font-size: clamp(1.9rem, 5vw, 3.1rem); font-weight: 700;
+  letter-spacing: -.045em; word-spacing: -.15em; line-height: 1.05;
+  margin: 0 0 1.4rem; max-width: 26ch; color: var(--ink); }
+.hero .lede { font-size: 1.05rem; line-height: 1.55; color: var(--ink-3);
+  max-width: 58ch; margin: 0 0 2.25rem; }
+.hero .lede b { color: var(--ink-2); font-weight: 500; }
+.cta-row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+
+/* ---- a command you can copy ---- */
+.cmd { display: flex; align-items: stretch; border: 1px solid var(--rule-2);
+  background: var(--s1); max-width: 46rem; }
+.cmd code { flex: 1; font-family: var(--mono); font-size: .8rem; color: var(--ink-2);
+  padding: .85rem 1rem; overflow-x: auto; white-space: nowrap; }
+.cmd code .p { color: var(--ink-4); user-select: none; }
+.cmd button { border: 0; border-left: 1px solid var(--rule-2); background: none;
+  color: var(--ink-4); font: 500 .62rem/1 var(--mono); letter-spacing: .14em;
+  text-transform: uppercase; padding: 0 1rem; cursor: pointer; }
+.cmd button:hover { color: var(--ink); background: var(--s2); }
+
+/* ---- generic section ---- */
+.sec { padding: 3.5rem 0; border-bottom: 1px solid var(--rule); }
+.sec > .cap { margin-bottom: 1.25rem; }
+.sec h2.big { font-size: clamp(1.3rem, 2.6vw, 1.75rem); font-weight: 700;
+  letter-spacing: -.038em; line-height: 1.15; color: var(--ink);
+  margin: 0 0 1rem; max-width: 30ch; text-transform: none; font-family: var(--sans); }
+.sec p.body { font-size: .95rem; line-height: 1.6; color: var(--ink-3);
+  max-width: 62ch; margin: 0 0 1rem; }
+.sec p.body b { color: var(--ink-2); font-weight: 500; }
+.sec p.body code { color: var(--ink-2); font-size: .85em; }
+
+/* ---- three-up ---- */
+.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+  border-top: 1px solid var(--rule); }
+.three > div { padding: 1.5rem 1.5rem 1.75rem; border-right: 1px solid var(--rule); }
+.three.two { grid-template-columns: repeat(2, 1fr); }
+.three > div:last-child { border-right: 0; }
+.three > div:first-child { padding-left: 0; }
+.three .n { font-family: var(--mono); font-size: .7rem; color: var(--ink-4);
+  letter-spacing: .06em; display: block; margin-bottom: .8rem; }
+.three h3 { font-size: 1rem; font-weight: 500; color: var(--ink); margin: 0 0 .5rem;
+  letter-spacing: -.02em; }
+.three p { font-size: .875rem; line-height: 1.55; color: var(--ink-3); margin: 0; }
+@media (max-width: 52rem) {
+  .three { grid-template-columns: 1fr; }
+  .three > div { border-right: 0; border-bottom: 1px solid var(--rule); padding-left: 0; }
+  .three > div:last-child { border-bottom: 0; }
+}
+
+/* ---- the live demo frame ---- */
+.demo { border: 1px solid var(--rule-2); background: var(--ground); margin-top: 1.5rem; }
+.demo-bar { display: flex; align-items: center; gap: .75rem; padding: .6rem .9rem;
+  background: var(--s2); border-bottom: 1px solid var(--rule-2);
+  font-family: var(--mono); font-size: .62rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4); }
+.demo-bar .dot3 { display: flex; gap: .3rem; }
+.demo-bar .dot3 i { width: 7px; height: 7px; border: 1px solid var(--rule-3); }
+.demo-bar .live { margin-left: auto; color: var(--ink-3); text-transform: none;
+  letter-spacing: .02em; font-size: .65rem; }
+/* The demo hosts a full review page; keep its chrome from fighting the site's. */
+.demo .wrap { max-width: none; padding: 0 1.25rem; }
+.demo header { padding-top: 1.5rem; }
+.demo .hunk.full { max-height: 22rem; }
+.demo-scroll { max-height: 40rem; overflow-y: auto; }
+
+/* ---- dashboard ---- */
+.rlist { border-top: 1px solid var(--rule); }
+.rrow { display: flex; align-items: center; gap: 1rem; padding: .95rem .25rem;
+  border-bottom: 1px solid var(--rule); text-decoration: none; }
+.rrow:hover { background: var(--s1); }
+.rrow .ix { font-family: var(--mono); font-size: .7rem; color: var(--ink-4); flex: none; }
+.rrow .rrepo { font-family: var(--mono); font-size: .78rem; color: var(--ink); flex: none; }
+.rrow .rrange { font-family: var(--mono); font-size: .68rem; color: var(--ink-4); flex: none; }
+.rrow .rintent { flex: 1; min-width: 0; font-size: .85rem; color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rrow .rwhen { font-family: var(--mono); font-size: .66rem; color: var(--ink-4);
+  flex: none; white-space: nowrap; }
+@media (max-width: 46rem) { .rrow .rintent { display: none; } }
+
+.empty { padding: 3.5rem 0; }
+.empty p { color: var(--ink-3); font-size: .95rem; max-width: 52ch; margin: 0 0 1.25rem; }
+
+/* ---- footer ---- */
+.foot { padding: 2.5rem 0 4rem; display: flex; gap: 1.5rem; flex-wrap: wrap;
+  align-items: center; font-family: var(--mono); font-size: .66rem;
+  letter-spacing: .06em; color: var(--ink-4); }
+.foot a { color: var(--ink-3); text-decoration: none; }
+.foot a:hover { color: var(--ink); }
+.foot .spacer { margin-left: auto; }
+
+/* ---- states ---- */
+.notice { border-left: 1px solid var(--accent-line); background: var(--accent-bg);
+  padding: .9rem 1.1rem; margin-bottom: 1.5rem; font-size: .875rem; color: var(--ink-2); }
+.notice.bad { border-color: var(--neg); background: var(--neg-bg); }

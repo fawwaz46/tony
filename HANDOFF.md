@@ -24,14 +24,17 @@ then emits **one JSON block**; a deterministic Python renderer owns all layout a
 a self-contained HTML page.
 
 ```
-src/tony/agent.py          SYSTEM prompt, 4 tool schemas, TOOLS dispatcher, runTool,
-                           review() loop with API error handling, main() with argparse
-src/tony/source/local.py   getDiff, resolveRepo, resolveBase, readFile, globFiles,
-                           grepFiles, splitDiffByFile, fileId
-src/tony/render.py         parseReview, renderFiles, renderImpacts, renderWalkthroughs,
-                           renderPage + the HTML TEMPLATE
-pyproject.toml             installs `tony` as a command (pip install -e .)
-nextSteps.md               decisions, rationale, backlog
+src/tony_cli/agent.py        SYSTEM prompt, 4 tool schemas, runTool (path-confined),
+                             review() loop, main() with argparse + login/logout/unpublish
+src/tony_cli/layout.py       the deterministic layer: parseReview, changedRuns, spanFor,
+                             kindFor, layout, itemsByPath
+src/tony_cli/payload.py      buildPayload — everything a page needs, windowed source
+src/tony_cli/page.py         wraps payload + the prebuilt viewer bundle into one file
+src/tony_cli/hosted.py       login (GitHub device flow), encrypt, publish, unpublish
+web/src/renderer/render.ts   THE renderer — local page and hosted site both use it
+web/src/pages/api/           the tony site: upload, fetch, auth, delete
+pyproject.toml               installs `tony` as a command (package name: tony-cli)
+nextSteps.md                 decisions, rationale, backlog
 ```
 
 Run it:

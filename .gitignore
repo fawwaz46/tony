@@ -9,3 +9,10 @@ __pycache__/
 
 # local MCP tool state
 .project-planner/
+
+# site build output
+web/.vercel/
+web/dist/
+web/.astro/
+dist/
+build/
