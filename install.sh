@@ -1,7 +1,7 @@
 #!/bin/sh
 # tony installer: puts a persistent `tony` command on your PATH.
 #
-#   curl -fsSL https://raw.githubusercontent.com/fawwaz46/tony/main/install.sh | sh
+#   curl -fsSL https://tony-cli.com/install.sh | sh
 #
 # Uses whatever Python tool-installer you already have (uv, then pipx) and only
 # bootstraps uv if you have neither — and says so before it does.

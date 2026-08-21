@@ -29,8 +29,11 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-export const onRequest: MiddlewareHandler = async (_context, next) => {
+export const onRequest: MiddlewareHandler = async (context, next) => {
   const response = await next();
+  // The installer is a shell script piped into sh; page security headers do
+  // not apply to it and only add noise.
+  if (context.url.pathname === "/install.sh") return response;
   const h = response.headers;
   h.set("Content-Security-Policy", CSP);
   h.set("X-Content-Type-Options", "nosniff");

@@ -22,7 +22,7 @@ Every review page has three tabs:
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/fawwaz46/tony/main/install.sh | sh
+curl -fsSL https://tony-cli.com/install.sh | sh
 ```
 
 or, if you already use uv or pipx:

@@ -28,7 +28,7 @@ GITHUB_DEVICE_TOKEN = "https://github.com/login/oauth/access_token"
 # The site tony publishes to. Overridable for local development, but it has a
 # real default because publishing is the default path — a fresh install should
 # work without anyone setting an environment variable.
-DEFAULT_API_URL = "https://tony-web.vercel.app"
+DEFAULT_API_URL = "https://tony-cli.com"
 
 CONFIG_DIR = os.path.expanduser(os.path.join("~", ".tony"))
 CREDENTIALS = os.path.join(CONFIG_DIR, "credentials.json")
