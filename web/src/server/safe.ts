@@ -49,3 +49,28 @@ export function capped(value: unknown, max: number): string {
   const s = typeof value === "string" ? value : "";
   return s.length > max ? s.slice(0, max) : s;
 }
+
+/**
+ * The origin this request actually arrived on.
+ *
+ * Behind Vercel's proxy `Astro.url.origin` is the internal address, not the
+ * public one — it resolved to `https://localhost`, which we then handed to
+ * GitHub as the OAuth redirect_uri. Login could never have completed.
+ *
+ * Order matters. A configured canonical URL wins, because the forwarded
+ * headers are attacker-influenced on a host that does not sanitise them and
+ * this value ends up in redirects and OAuth callbacks. The headers are the
+ * fallback so preview deployments, which have no fixed domain, still work.
+ */
+export function siteOrigin(request: Request, fallback: string): string {
+  const configured =
+    (typeof process !== "undefined" ? process.env?.TONY_SITE_URL : undefined) ?? "";
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (host && /^[a-zA-Z0-9.:-]+$/.test(host)) {
+    const proto = request.headers.get("x-forwarded-proto")?.split(",")[0] ?? "https";
+    return `${proto}://${host}`;
+  }
+  return fallback;
+}

@@ -7,14 +7,15 @@
 import type { APIRoute } from "astro";
 import { SESSION_COOKIE, createSession, migrate, upsertUser } from "../../../server/db";
 import { env } from "../../../server/env";
-import { safeNext } from "../../../server/safe";
+import { safeNext, siteOrigin } from "../../../server/safe";
 
 export const prerender = false;
 
-export const GET: APIRoute = async ({ url, cookies, redirect }) => {
+export const GET: APIRoute = async ({ url, request, cookies, redirect }) => {
   const raw = cookies.get("tony_oauth")?.value;
   cookies.delete("tony_oauth", { path: "/" });
 
+  const origin = siteOrigin(request, url.origin);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (!raw || !code || !state) return redirect("/?error=login", 302);
@@ -34,7 +35,7 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
       client_id: env("GITHUB_CLIENT_ID"),
       client_secret: env("GITHUB_CLIENT_SECRET"),
       code,
-      redirect_uri: new URL("/api/auth/callback", url.origin).toString(),
+      redirect_uri: `${origin}/api/auth/callback`,
     }),
   });
   const token = (await tokenResp.json())?.access_token;
@@ -50,7 +51,7 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
   const sessionId = await createSession(await upsertUser(gh));
   cookies.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
-    secure: url.protocol === "https:",
+    secure: origin.startsWith("https:"),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
@@ -58,5 +59,5 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
 
   // Re-validated on the way back: the cookie is ours, but it round-tripped
   // through the browser and costs nothing to check twice.
-  return redirect(safeNext(expected.next, url.origin), 302);
+  return redirect(safeNext(expected.next, origin), 302);
 };

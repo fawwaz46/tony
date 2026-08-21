@@ -10,11 +10,11 @@
 import type { APIRoute } from "astro";
 import { throttle } from "../../../server/db";
 import { env } from "../../../server/env";
-import { safeNext } from "../../../server/safe";
+import { safeNext, siteOrigin } from "../../../server/safe";
 
 export const prerender = false;
 
-export const GET: APIRoute = ({ url, cookies, redirect, clientAddress }) => {
+export const GET: APIRoute = ({ url, request, cookies, redirect, clientAddress }) => {
   if (throttle(`start:${clientAddress}`, 30, 60_000)) {
     return new Response("too many attempts", { status: 429 });
   }
@@ -24,13 +24,14 @@ export const GET: APIRoute = ({ url, cookies, redirect, clientAddress }) => {
   // hand them a bare 500 from an endpoint they never chose to visit.
   if (!clientId) return redirect("/?error=unconfigured", 302);
 
-  const next = safeNext(url.searchParams.get("next"), url.origin);
+  const origin = siteOrigin(request, url.origin);
+  const next = safeNext(url.searchParams.get("next"), origin);
 
   // Bound to the browser, checked on the way back: this is the CSRF guard.
   const state = crypto.randomUUID();
   cookies.set("tony_oauth", JSON.stringify({ state, next }), {
     httpOnly: true,
-    secure: url.protocol === "https:",
+    secure: origin.startsWith("https:"),
     sameSite: "lax",
     path: "/",
     maxAge: 600,
@@ -38,7 +39,7 @@ export const GET: APIRoute = ({ url, cookies, redirect, clientAddress }) => {
 
   const authorize = new URL("https://github.com/login/oauth/authorize");
   authorize.searchParams.set("client_id", clientId);
-  authorize.searchParams.set("redirect_uri", new URL("/api/auth/callback", url.origin).toString());
+  authorize.searchParams.set("redirect_uri", `${origin}/api/auth/callback`);
   authorize.searchParams.set("scope", "read:user");
   authorize.searchParams.set("state", state);
   return redirect(authorize.toString(), 302);
