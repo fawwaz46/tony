@@ -60,21 +60,43 @@ export function capped(value: unknown, max: number): string {
  * Order matters. A configured canonical URL wins, because the forwarded
  * headers are attacker-influenced on a host that does not sanitise them and
  * this value ends up in redirects and OAuth callbacks. The headers are the
- * fallback so preview deployments, which have no fixed domain, still work.
+ * fallback so preview deployments, which have no fixed domain, still work —
+ * which means `TONY_SITE_URL` belongs on the production environment only. Set
+ * it for previews too and every preview compares its own host against the
+ * production origin, refusing its own sign-out and delete as cross-site.
  */
 export function siteOrigin(request: Request, fallback: string): string {
   const configured =
     (typeof process !== "undefined" ? process.env?.TONY_SITE_URL : undefined) ?? "";
-  if (configured) return configured.replace(/\/+$/, "");
+  // A value that is not an absolute http(s) origin is a misconfiguration, not
+  // a canonical URL. Honouring `tony-cli.com` verbatim would refuse every
+  // state-changing request and hand GitHub an unusable redirect_uri, so fall
+  // through to the headers instead of propagating the mistake.
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      if (url.protocol === "https:" || url.protocol === "http:") return url.origin;
+    } catch {
+      // Not parseable — fall through.
+    }
+  }
 
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   if (host && /^[a-zA-Z0-9.:-]+$/.test(host)) {
-    // Fall back to the scheme this request actually came in on rather than
-    // assuming https, so http://localhost during development still matches.
-    const proto =
-      request.headers.get("x-forwarded-proto")?.split(",")[0] ??
-      new URL(fallback).protocol.replace(":", "");
-    return `${proto}://${host}`;
+    const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0].trim();
+    if (forwarded) return `${forwarded}://${host}`;
+    // No forwarded scheme. Trusting the inbound one lets a proxy that omits
+    // the header downgrade a public site to http, which would put the OAuth
+    // code on the wire in cleartext and drop `Secure` from the session
+    // cookie. Only the dev server, which is genuinely http, gets that
+    // benefit of the doubt; anything else is assumed to be behind TLS.
+    // The host pattern above rejects brackets, so an IPv6 literal never
+    // reaches here; stripping a trailing port is enough.
+    const bare = host.replace(/:\d+$/, "");
+    if (bare === "localhost" || bare === "127.0.0.1") {
+      return `${new URL(fallback).protocol.replace(":", "")}://${host}`;
+    }
+    return `https://${host}`;
   }
   return fallback;
 }

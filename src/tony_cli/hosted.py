@@ -14,6 +14,7 @@ tony API for tony's own token, which is what gets cached — the GitHub token is
 never stored.
 """
 
+import gzip
 import json
 import os
 import stat
@@ -34,6 +35,19 @@ CONFIG_DIR = os.path.expanduser(os.path.join("~", ".tony"))
 CREDENTIALS = os.path.join(CONFIG_DIR, "credentials.json")
 
 
+def asJson(response):
+    """A response's JSON body, or None if it is not JSON.
+
+    `httpx` raises `json.JSONDecodeError` rather than an `HTTPError` here, so
+    every bare `.json()` was one HTML error page away from a traceback.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) else None
+
+
 def apiBase():
     """Where the tony site lives."""
     return (os.environ.get("TONY_API_URL") or DEFAULT_API_URL).rstrip("/")
@@ -50,10 +64,17 @@ def savedToken():
 
 
 def saveToken(token, login):
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(CREDENTIALS, "w", encoding="utf-8") as fh:
+    """Write the credential, never leaving it readable by anyone else.
+
+    `open()` would create at the umask's mercy — 0644 on most machines — and a
+    chmod afterwards closes the window a moment too late. Opening with the mode
+    up front means the file is never readable by another user on a shared box.
+    """
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    fd = os.open(CREDENTIALS, flags, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump({"token": token, "githubLogin": login}, fh)
-    os.chmod(CREDENTIALS, stat.S_IRUSR | stat.S_IWUSR)
 
 
 def clearToken():
@@ -81,7 +102,7 @@ def login():
     # The GitHub OAuth client id is public by design; the server owns it so the
     # CLI never has to ship one.
     try:
-        config = httpx.get(f"{base}/api/config", timeout=10).json()
+        config = asJson(httpx.get(f"{base}/api/config", timeout=10)) or {}
         clientId = config.get("githubClientId") or ""
     except Exception as e:
         print(f"tony: could not reach {base}: {e}", file=sys.stderr)
@@ -92,12 +113,12 @@ def login():
         return 1
 
     try:
-        device = httpx.post(
+        device = asJson(httpx.post(
             GITHUB_DEVICE_CODE,
             data={"client_id": clientId, "scope": "read:user"},
             headers={"Accept": "application/json"},
             timeout=10,
-        ).json()
+        )) or {}
     except httpx.HTTPError as e:
         print(f"tony: could not reach GitHub: {e}", file=sys.stderr)
         return 1
@@ -124,7 +145,7 @@ def login():
         while time.time() < deadline:
             time.sleep(interval)
             try:
-                poll = httpx.post(
+                poll = asJson(httpx.post(
                     GITHUB_DEVICE_TOKEN,
                     data={
                         "client_id": clientId,
@@ -133,7 +154,7 @@ def login():
                     },
                     headers={"Accept": "application/json"},
                     timeout=10,
-                ).json()
+                )) or {}
             except httpx.HTTPError:
                 # A blip mid-approval should not lose a code the user already
                 # typed in; the deadline still bounds this.
@@ -176,7 +197,10 @@ def login():
               file=sys.stderr)
         return 1
 
-    body = exchanged.json()
+    body = asJson(exchanged) or {}
+    if not body.get("token"):
+        print("tony: the tony API returned no token.", file=sys.stderr)
+        return 1
     saveToken(body["token"], body.get("githubLogin", ""))
     print(f"tony: logged in as {body.get('githubLogin', 'you')}.")
     return 0
@@ -235,13 +259,18 @@ def publish(payloadJson, repo="", rangeLabel=""):
     if not token:
         return None, "not logged in — run `tony login` first."
 
+    # Gzip before upload. Review JSON is repetitive source and compresses about
+    # ten to one, and the site's size limit is measured on what arrives — so
+    # this is what lets a large review publish at all, not just a smaller
+    # request. `application/gzip` rather than `Content-Encoding`, so no proxy
+    # decides to helpfully inflate it on the way.
     try:
         resp = httpx.post(
             f"{base}/api/reviews",
-            content=payloadJson.encode("utf-8"),
+            content=gzip.compress(payloadJson.encode("utf-8")),
             headers={
                 "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
+                "Content-Type": "application/gzip",
             },
             timeout=60,
         )
@@ -255,7 +284,9 @@ def publish(payloadJson, repo="", rangeLabel=""):
     if resp.status_code != 200:
         return None, f"upload failed ({resp.status_code})."
 
-    body = resp.json()
+    body = asJson(resp) or {}
+    if not body.get("id"):
+        return None, "the site accepted the upload but returned no review id."
     print(f"tony: to remove it later: tony unpublish {body['id']}", file=sys.stderr)
     return f"{base}/r/{body['id']}", None
 

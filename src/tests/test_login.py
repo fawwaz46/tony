@@ -7,6 +7,7 @@ the paths that used to raise instead of explaining — a GitHub app with device
 flow switched off, a slow_down, an expired code, a dropped connection.
 """
 
+import gzip
 import json
 
 import httpx
@@ -242,6 +243,7 @@ def test_publish_uploads_and_returns_a_clean_link(monkeypatch, capsys):
         sent["url"] = url
         sent["body"] = kwargs.get("content")
         sent["auth"] = kwargs["headers"]["Authorization"]
+        sent["type"] = kwargs["headers"]["Content-Type"]
         return FakeResponse({"id": "abc123"})
 
     monkeypatch.setattr(hosted.httpx, "post", post)
@@ -250,5 +252,9 @@ def test_publish_uploads_and_returns_a_clean_link(monkeypatch, capsys):
     assert problem is None
     assert url == "https://site.test/r/abc123"
     assert sent["auth"] == "Bearer tony_tok"
-    assert b"source code" in sent["body"]  # plain JSON now; the server seals it
+    # Gzipped on the wire — the site's size limit is measured on what arrives,
+    # so this is what lets a large review publish at all.
+    assert sent["body"][:2] == b"\x1f\x8b"
+    assert sent["type"] == "application/gzip"
+    assert json.loads(gzip.decompress(sent["body"])) == {"v": 1, "secret": "source code"}
     assert "abc123" in capsys.readouterr().err

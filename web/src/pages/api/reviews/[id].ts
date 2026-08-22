@@ -8,12 +8,16 @@
  */
 import type { APIRoute } from "astro";
 import { del, get } from "@vercel/blob";
+import { gunzip, isGzip } from "../../../server/compress";
 import { open } from "../../../server/crypto";
 import {
   SESSION_COOKIE, fail, migrate, sql, userForSession, userForToken, withDatabase,
 } from "../../../server/db";
 
 export const prerender = false;
+
+// Matches the ceiling the upload route inflates against.
+const MAX_PAYLOAD_BYTES = 10_000_000;
 
 /** Either identity works: a browser session, or the CLI's bearer token. */
 async function reader(request: Request, cookies: any) {
@@ -39,7 +43,12 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
     const blob = await get(rows[0].blob_path, { access: "private" });
     if (!blob || blob.statusCode !== 200) return fail(404, "not found");
 
-    return new Response(await open(await new Response(blob.stream).arrayBuffer()), {
+    // Blobs written before compression are plain JSON under the same
+    // encryption, so the magic bytes decide rather than a stored version.
+    const plain = await open(await new Response(blob.stream).arrayBuffer());
+    const json = isGzip(plain) ? await gunzip(plain, MAX_PAYLOAD_BYTES) : plain;
+
+    return new Response(new TextDecoder().decode(json), {
       headers: {
         "Content-Type": "application/json",
         // Private: it is one user's source code, decrypted.
@@ -64,7 +73,8 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     if (!rows.length) return fail(404, "not found");
     if (Number(rows[0].user_id) !== user.id) return fail(403, "not yours to delete");
 
-    await del(rows[0].blob_path, { access: "private" }).catch(() => {});
+    // `del` addresses the object by pathname and takes no access option.
+    await del(rows[0].blob_path).catch(() => {});
     await sql`DELETE FROM reviews WHERE id = ${params.id}`;
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },

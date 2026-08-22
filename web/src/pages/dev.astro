@@ -1,15 +1,29 @@
 ---
-// The development viewer: renders src/fixtures/review.json through the same
-// renderer as everything else. `tony --viewer` in any repo overwrites the
-// fixture, and the dev server reloads with it.
-import review from "../fixtures/review.json";
+// The development viewer: renders a payload through the same renderer as
+// everything else. A development aid, not a page.
+import { readFileSync } from "node:fs";
 import "../styles.css";
 
-// A development aid, not a page. `tony --viewer` writes the fixture this
-// renders, so in production it would just serve whatever review was last
-// loaded locally.
 export const prerender = false;
 if (import.meta.env.PROD) return new Response("Not found", { status: 404 });
+
+// Two fixtures, deliberately: `review.json` is the curated demo the homepage
+// ships and is tracked; `local.json` is what `tony --viewer` writes and is
+// gitignored, because it holds a review of whatever repo you ran in and must
+// never be committable. Read at request time rather than imported so writing
+// one does not need a rebuild.
+const load = (name: string) => {
+  try {
+    return readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8");
+  } catch {
+    return null;
+  }
+};
+const payload = load("local.json") ?? load("review.json") ?? "{}";
+// JSON.stringify does not escape `<`, so a payload containing the literal
+// `</script>` — ordinary enough in a repo that emits HTML — would end this
+// block early and the rest would parse as markup. Same escape page.py uses.
+const safe = payload.replace(/<\//g, "<\\/");
 ---
 
 <html lang="en">
@@ -20,7 +34,7 @@ if (import.meta.env.PROD) return new Response("Not found", { status: 404 });
   </head>
   <body>
     <div id="tony-root"></div>
-    <script type="application/json" id="tony-payload" set:html={JSON.stringify(review)} />
+    <script type="application/json" id="tony-payload" set:html={safe} />
     <script>
       import { renderReview } from "../renderer/render";
       const root = document.getElementById("tony-root")!;

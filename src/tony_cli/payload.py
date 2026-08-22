@@ -15,7 +15,7 @@ import os
 from datetime import datetime, timezone
 
 from tony_cli.layout import itemsByPath, layout, parseReview
-from tony_cli.source.local import splitDiffByFile
+from tony_cli.source.local import confine, splitDiffByFile
 
 VERSION = 1
 
@@ -26,10 +26,35 @@ STEP_PAD = 2
 
 
 def readLines(repoPath, path):
+    """The file's lines, or None if it cannot be read or sits outside the repo.
+
+    Every path here was named by the model, and the model reads untrusted repo
+    content — the threat `confine` was written for. The tool calls were already
+    confined; these reads matter more, not less, because what they return is
+    uploaded rather than merely shown to the model.
+    """
+    inside = confine(repoPath, path)
+    if inside is None:
+        return None
     try:
-        with open(os.path.join(repoPath, path), encoding="utf-8") as fh:
+        with open(inside, encoding="utf-8") as fh:
             return fh.read().split("\n")
     except (OSError, UnicodeDecodeError):
+        return None
+
+
+def lineNumber(value):
+    """A 1-indexed line number the model supplied, or None if it is not one.
+
+    The model can name a line; it cannot be trusted to name an integer. An
+    unparseable value here used to raise straight out of `buildPayload`, which
+    runs after the review has already been paid for.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return None
 
 
@@ -39,10 +64,10 @@ def windowFor(src, start, end, pad):
     Returns the slice plus where it sits, so the page can number the lines
     correctly without possessing the rest of the file.
     """
-    if src is None:
+    if src is None or start is None or end is None:
         return None
-    lo = max(1, int(start) - pad)
-    hi = min(len(src), int(end) + pad)
+    lo = max(1, start - pad)
+    hi = min(len(src), end + pad)
     if hi < lo:
         return None
     return {
@@ -68,7 +93,7 @@ def impactWindows(impacts, repoPath):
     windows = {}
     for path, group in byPath.items():
         src = readLines(repoPath, path)
-        anchors = [int(i["line"]) for i in group if isinstance(i.get("line"), (int, float))]
+        anchors = [n for n in (lineNumber(i.get("line")) for i in group) if n is not None]
         if not anchors:
             anchors = [1]
         windows[path] = windowFor(src, min(anchors), max(anchors), IMPACT_PAD)
@@ -84,11 +109,14 @@ def stepWindows(walkthroughs, repoPath):
         for st in w.get("steps") or []:
             path, lines = st.get("path"), st.get("lines")
             window = None
-            if path and lines:
+            # `lines` is meant to be [start, end]; anything else is the model
+            # not following the schema, which costs this step its window and
+            # nothing more.
+            if path and isinstance(lines, list) and lines:
                 if path not in cache:
                     cache[path] = readLines(repoPath, path)
-                start = int(lines[0])
-                end = int(lines[-1] if len(lines) > 1 else lines[0])
+                start = lineNumber(lines[0])
+                end = lineNumber(lines[-1])
                 window = windowFor(cache[path], start, end, STEP_PAD)
                 if window:
                     window["hot"] = [start, end]

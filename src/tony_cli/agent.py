@@ -11,8 +11,8 @@ from tony_cli.layout import parseReview
 from tony_cli.page import renderPage
 from tony_cli.payload import buildPayload, dumpPayload
 from tony_cli.source.local import (
-    confine, getDiff, globFiles, grepFiles, isDirty, readFile, resolveBase,
-    resolveRepo, resolveRev,
+    FAILED, confine, getDiff, globFiles, grepFiles, isDirty, readFile,
+    resolveBase, resolveRepo, resolveRev,
 )
 
 # The key comes from the environment first, then from ~/.tony/.env — a home
@@ -300,7 +300,15 @@ def runTool(name, toolInput, root):
         return f"tool error:{e}"
 
 DEFAULT_MODEL = "claude-opus-5"
-DEFAULT_MAX_TOKENS = 16384
+# Streaming, so this is not bounded by how long one HTTP response may take.
+# A review of a large diff has to annotate every hunk, and the old 16k ceiling
+# truncated exactly the reviews that needed the most room.
+DEFAULT_MAX_TOKENS = 64000
+
+# How many times the model may come back for more tools before we stop paying.
+# A review of a large diff settles well inside this; a model that has started
+# looping never does, and every turn costs another request.
+MAX_TURNS = 30
 
 
 def parseRange(spec):
@@ -333,15 +341,25 @@ def review(repoPath, base=None, head="HEAD", model=DEFAULT_MODEL,
     diff = ""
     text = ""
 
-    while True:
+    for _ in range(MAX_TURNS):
         try:
-            response = client.messages.create(
+            # Streaming because `max_tokens` is large: a non-streaming request
+            # has to deliver the whole answer within one HTTP timeout, and a
+            # long review does not. It costs nothing and changes no output.
+            #
+            # `cache_control` caches the longest stable prefix — the system
+            # prompt, the tool list, and the diff, which is usually most of the
+            # request. Every turn after the first re-reads it at a tenth of the
+            # price instead of paying full freight to send it again.
+            with client.messages.stream(
                 model=model,
                 max_tokens=maxTokens,
                 system=SYSTEM,
                 messages=messages,
                 tools=ALL_TOOLS,
-            )
+                cache_control={"type": "ephemeral"},
+            ) as stream:
+                response = stream.get_final_message()
         except anthropic.APIStatusError as e:
             print(f"tony: API error {e.status_code}: {e.message}", file=sys.stderr)
             return 1, text, diff
@@ -357,12 +375,23 @@ def review(repoPath, base=None, head="HEAD", model=DEFAULT_MODEL,
                 "Re-run with a larger --max-tokens.",
                 file=sys.stderr,
             )
+            text = "\n".join(b.text for b in response.content if b.type == "text")
+            return 1, text, diff
 
         if response.stop_reason != "tool_use":
             text = "\n".join(b.text for b in response.content if b.type == "text")
             return 0, text, diff
 
         results = []
+        if verbose:
+            u = response.usage
+            print(
+                f"[usage] in={u.input_tokens} out={u.output_tokens} "
+                f"cache_write={getattr(u, 'cache_creation_input_tokens', 0)} "
+                f"cache_read={getattr(u, 'cache_read_input_tokens', 0)}",
+                file=sys.stderr,
+            )
+
         for block in response.content:
             if block.type == "tool_use":
                 if verbose:
@@ -377,6 +406,13 @@ def review(repoPath, base=None, head="HEAD", model=DEFAULT_MODEL,
                 })
 
         messages.append({"role": "user", "content": results})
+
+    print(
+        f"tony: the review kept asking for more files after {MAX_TURNS} rounds and "
+        "was stopped. Try a narrower range.",
+        file=sys.stderr,
+    )
+    return 1, text, diff
 
 
 def checkWorkingTree(root, head):
@@ -409,14 +445,18 @@ def checkWorkingTree(root, head):
 
 
 def viewerFixture():
-    """`web/src/fixtures/review.json` in tony's own checkout, if there is one.
+    """`web/src/fixtures/local.json` in tony's own checkout, if there is one.
 
     Only exists when tony is installed from source (`pip install -e .`), which is
     the case while the viewer is being built. Returns None for a plain install.
+
+    Deliberately not `review.json`, which is tracked and ships as the homepage
+    demo: this file holds a review of whatever repo `--viewer` was run in, so
+    it is gitignored and must stay that way.
     """
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.normpath(
-        os.path.join(here, "..", "..", "web", "src", "fixtures", "review.json")
+        os.path.join(here, "..", "..", "web", "src", "fixtures", "local.json")
     )
     return path if os.path.isdir(os.path.dirname(path)) else None
 
@@ -434,9 +474,13 @@ def saveRaw(path, text, diff):
 
 
 def loadRaw(path):
-    with open(path, encoding="utf-8") as fh:
-        saved = json.load(fh)
-    return saved["review"], saved["diff"]
+    """The saved review and diff, or (None, None) if the file is not one."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            saved = json.load(fh)
+        return saved["review"], saved["diff"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, None
 
 
 def writeReport(path, page):
@@ -573,11 +617,19 @@ def main(argv=None):
             print(f"tony: nothing saved for this range at {rawPath}", file=sys.stderr)
             return 2
         text, diff = loadRaw(rawPath)
+        if text is None:
+            print(f"tony: the saved review at {rawPath} could not be read. "
+                  "Re-run without --replay.", file=sys.stderr)
+            return 2
     else:
         # An empty range is the most common harmless mistake — a branch already
         # merged, or a typo'd base. Catch it here rather than after paying for a
         # review of nothing.
-        if not getDiff(root, base, head).strip():
+        probe = getDiff(root, base, head)
+        if probe.startswith(FAILED):
+            print(f"tony: {probe}", file=sys.stderr)
+            return 2
+        if not probe.strip():
             print(
                 f"tony: {base}...{head} has no changes to review.\n"
                 "       Check the range — a branch that is already merged shows "

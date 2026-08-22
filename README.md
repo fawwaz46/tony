@@ -58,18 +58,24 @@ actually read, `--stale` overrides the clean-tree check.
 
 ```sh
 tony login                   # once — GitHub device flow
-tony main...my-branch --publish
-tony: https://<tony-site>/r/8f3ka92m#kJx2...
+tony main...my-branch        # publishing is the default
+tony: https://tony-cli.com/r/8f3ka92m
 ```
 
-**The site cannot read your code.** The review is encrypted on your machine
-(AES-256-GCM) and the key travels only in the link's `#fragment`, which
-browsers never send to any server. The site stores ciphertext; whoever you send
-the full link to decrypts it in their browser. `--publish` also prints a delete
-token — `tony unpublish <id> <token>` removes a review at any time.
+**Who can read a published review:** anyone signed in who has the link. Review
+ids are random, so the link is what grants access — treat it like a password.
+`tony unpublish <id>` removes a review at any time.
 
-Local review needs no account. Publishing needs `tony login` and a
-`TONY_API_URL` pointing at a deployed tony site.
+**What the site can read:** everything in the review. The payload is uploaded
+over TLS and encrypted at rest under a key the server holds, so a leak of the
+stored blobs yields nothing — but we can open a review, and so can any lawful
+demand made to us. Do not publish from a repository you could not share with
+us. An earlier design encrypted on your machine and kept the key in the link's
+fragment; that was dropped deliberately when reading moved behind an account
+and a history of past reviews became part of the product, since both need the
+server to be able to open a review.
+
+Local review needs no account and never leaves the machine: `tony --local`.
 
 ## Development
 

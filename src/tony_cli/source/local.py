@@ -12,21 +12,32 @@ SKIP_DIRS = {
 MAX_FILE_CHARS = 60_000
 MAX_RESULTS = 200
 
-def getDiff (repoPath: str, base=None, head="HEAD") -> str:
+# A diff and a failure are both strings, so callers that only look at the
+# return value cannot tell them apart — an empty-range check reads "not a git
+# repository" as "there are changes". The prefix is what makes them separable.
+FAILED = "getDiff failed: "
+
+
+def getDiff(repoPath: str, base=None, head="HEAD") -> str:
+    """The diff as text, or a message starting with FAILED.
+
+    The model is one of the callers and reads this as prose, so a failure has
+    to stay human-readable rather than raise.
+    """
     try:
         root = resolveRepo(repoPath)
         base = base or resolveBase(root)
     except ValueError as e:
-        return str(e)
-    
+        return f"{FAILED}{e}"
+
     result = subprocess.run(
         ["git", "diff", f"{base}...{head}"],
-        cwd = root,
+        cwd=root,
         capture_output=True, text=True,
-        )
-    
+    )
+
     if result.returncode != 0:
-        return f"getDiff failed: {result.stderr}"
+        return f"{FAILED}{result.stderr}"
     return result.stdout
 
 def resolveRepo (repoPath: str) -> str :

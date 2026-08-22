@@ -7,8 +7,9 @@
     "build": "npm run sync:install && astro build",
     "preview": "astro preview",
     "build:viewer": "esbuild src/renderer/local.ts --bundle --minify --format=iife --outfile=../src/tony_cli/assets/viewer.js && cp src/styles.css ../src/tony_cli/assets/viewer.css",
-    "test": "node test/render.xss.mjs",
-    "sync:install": "cp ../install.sh public/install.sh 2>/dev/null || true"
+    "sync:install": "cp ../install.sh public/install.sh 2>/dev/null || true",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run typecheck && node test/render.xss.mjs && node test/origin.csrf.mjs && node test/compress.mjs"
   },
   "dependencies": {
     "@astrojs/vercel": "^8.0.0",
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.24.0",
-    "jsdom": "^25.0.0"
+    "jsdom": "^25.0.0",
+    "typescript": "^5.9.3"
   }
 }

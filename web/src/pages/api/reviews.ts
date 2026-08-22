@@ -11,14 +11,27 @@
  */
 import type { APIRoute } from "astro";
 import { put } from "@vercel/blob";
+import { TooLarge, gunzip, gzip, isGzip } from "../../server/compress";
 import { seal } from "../../server/crypto";
 import { fail, migrate, sql, userForToken, withDatabase } from "../../server/db";
 import { capped } from "../../server/safe";
 
 export const prerender = false;
 
-const MAX_BYTES = 1_000_000; // payloads run ~30KB; generous, not open
+// What may arrive, measured on the wire — so a compressed upload spends this
+// budget on compressed bytes and fits roughly ten times the review.
+const MAX_UPLOAD_BYTES = 1_000_000; // payloads run ~30KB gzipped; generous, not open
+// What it may become once inflated. Without this the wire limit bounds
+// nothing: a gzip bomb is small to send and enormous to hold.
+const MAX_PAYLOAD_BYTES = 10_000_000;
 const PER_HOUR = 60;
+
+// The summary columns are read back into every dashboard row, so they are
+// bounded independently of the payload: within one 1MB upload a single
+// `intent` could otherwise carry the whole megabyte into that list.
+const REPO_MAX = 200;
+const RANGE_MAX = 200;
+const INTENT_MAX = 2_000;
 
 const randomId = () =>
   [...crypto.getRandomValues(new Uint8Array(8))]
@@ -31,8 +44,21 @@ export const POST: APIRoute = async ({ request }) => {
   const auth = request.headers.get("Authorization");
   if (!auth) return fail(401, "login required");
 
-  const body = await request.text();
-  if (body.length > MAX_BYTES) return fail(413, "this review is over the size limit");
+  // Bytes, not text: the CLI gzips before upload, and older CLIs still send
+  // plain JSON. The magic bytes say which, so neither needs a flag day.
+  const wire = new Uint8Array(await request.arrayBuffer());
+  if (wire.length > MAX_UPLOAD_BYTES) {
+    return fail(413, "this review is over the size limit");
+  }
+
+  let raw: Uint8Array;
+  try {
+    raw = isGzip(wire) ? await gunzip(wire, MAX_PAYLOAD_BYTES) : wire;
+  } catch (e) {
+    if (e instanceof TooLarge) return fail(413, "this review is over the size limit");
+    return fail(400, "not a review payload");
+  }
+  const body = new TextDecoder().decode(raw);
 
   let payload: any;
   try {
@@ -65,8 +91,18 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const id = randomId();
-    const blob = await put(`reviews/${id}`, await seal(body), {
-      access: "public", // ciphertext, unguessable URL, and only ever served through this API
+    // Private: the bytes are ciphertext, but the only supported way in is
+    // through this API, which checks a session. A publicly addressable object
+    // would make the login gate one of two doors instead of the only one, and
+    // both readers below already pass `access: "private"`.
+    // Compress, then encrypt — ciphertext does not compress, so the other
+    // order saves nothing. A Blob rather than the raw Uint8Array `seal`
+    // returns: that is the byte container `put` accepts, and it carries the
+    // content type.
+    const stored = await seal(await gzip(raw));
+    const sealed = new Blob([stored as BlobPart], { type: "application/octet-stream" });
+    const blob = await put(`reviews/${id}`, sealed, {
+      access: "private",
       contentType: "application/octet-stream",
       addRandomSuffix: true,
     });
@@ -74,11 +110,11 @@ export const POST: APIRoute = async ({ request }) => {
     await sql`
       INSERT INTO reviews (id, user_id, repo, range, intent, files, annotations, size, blob_path)
       VALUES (${id}, ${user.id},
-              ${String(payload.repo ?? "")}, ${String(payload.range ?? "")},
-              ${String(payload.intent ?? "")},
+              ${capped(payload.repo, REPO_MAX)}, ${capped(payload.range, RANGE_MAX)},
+              ${capped(payload.intent, INTENT_MAX)},
               ${Array.isArray(payload.files) ? payload.files.length : 0},
               ${Array.isArray(payload.annotations) ? payload.annotations.length : 0},
-              ${body.length}, ${pathname})`;
+              ${raw.length}, ${blob.pathname})`;
 
     return new Response(JSON.stringify({ id }), {
       headers: { "Content-Type": "application/json" },

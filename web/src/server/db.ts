@@ -20,8 +20,15 @@ import { env } from "./env";
 // module anywhere — including the shell every page renders — took the whole
 // site down whenever the database was unset or unreachable. The marketing
 // page needs no database and must not depend on one.
-type Sql = ReturnType<typeof neon>;
-let client: Sql | null = null;
+// `neon()` types its result as a union covering every response mode it can be
+// configured for, which leaves `rows.length` and `rows[0]` errors at every call
+// site. We only ever use the default mode — an array of row objects — so the
+// tagged template is declared as that. Without this the project cannot be
+// type-checked at all, and an undefined identifier in a query once reached
+// production because of it.
+type Row = Record<string, any>;
+type Sql = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Row[]>;
+let client: ReturnType<typeof neon> | null = null;
 
 export const sql: Sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
   if (!client) {
@@ -75,8 +82,15 @@ export async function migrate(): Promise<void> {
     CREATE TABLE IF NOT EXISTS tokens (
       hash TEXT PRIMARY KEY,
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL
     )`;
+  // CLI tokens predate the expiry and have no value for the column. The
+  // default gives them a full window from the moment this runs rather than
+  // signing everyone out at deploy; new rows always supply their own.
+  await sql`
+    ALTER TABLE tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL
+      DEFAULT now() + interval '30 days'`;
   await sql`
     CREATE TABLE IF NOT EXISTS sessions (
       hash TEXT PRIMARY KEY,
@@ -143,12 +157,22 @@ export async function userForToken(header: string | null): Promise<User | null> 
   const rows = await sql`
     SELECT u.id, u.github_login, u.avatar_url
     FROM tokens t JOIN users u ON u.id = t.user_id
-    WHERE t.hash = ${await sha256Hex(token)}`;
+    WHERE t.hash = ${await sha256Hex(token)} AND t.expires_at > now()`;
   if (!rows.length) return null;
   return { id: Number(rows[0].id), githubLogin: rows[0].github_login, avatarUrl: rows[0].avatar_url };
 }
 
 export const SESSION_COOKIE = "tony_session";
+
+/**
+ * How long a credential lasts before its owner signs in again.
+ *
+ * The same window for the browser and the CLI. A CLI token used to last
+ * forever, which made a copied `~/.tony/credentials.json` a permanent one —
+ * there is no device list to revoke it from, so the expiry is the only thing
+ * that ever takes it away.
+ */
+export const CREDENTIAL_DAYS = 30;
 
 /**
  * Crude per-IP throttle for endpoints that have no account behind them yet.
@@ -183,8 +207,19 @@ export async function createSession(userId: number): Promise<string> {
   const id = randomToken();
   await sql`
     INSERT INTO sessions (hash, user_id, expires_at)
-    VALUES (${await sha256Hex(id)}, ${userId}, now() + interval '30 days')`;
+    VALUES (${await sha256Hex(id)}, ${userId},
+            now() + make_interval(days => ${CREDENTIAL_DAYS}::int))`;
   return id;
+}
+
+/** The CLI's credential. Same shape as a session, same window. */
+export async function createToken(userId: number): Promise<string> {
+  const token = randomToken();
+  await sql`
+    INSERT INTO tokens (hash, user_id, expires_at)
+    VALUES (${await sha256Hex(token)}, ${userId},
+            now() + make_interval(days => ${CREDENTIAL_DAYS}::int))`;
+  return token;
 }
 
 export async function upsertUser(gh: { id: number; login: string; avatar_url?: string }): Promise<number> {

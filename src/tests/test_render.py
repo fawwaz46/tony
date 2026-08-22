@@ -8,7 +8,9 @@ walkthrough, so the off-by-one edges are pinned here.
 import textwrap
 
 from tony_cli.layout import changedRuns, kindFor, spanFor
-from tony_cli.payload import STEP_PAD, stepWindows, windowFor
+from tony_cli.payload import (
+    STEP_PAD, impactWindows, readLines, stepWindows, windowFor,
+)
 from tony_cli.source.local import splitDiffByFile
 
 
@@ -329,3 +331,70 @@ def test_a_diff_line_inside_a_body_does_not_start_a_new_file():
     diff = MODIFIED.replace("-x = 1", "-x = 1\n-diff --git a/fake b/fake")
     files = splitDiffByFile(diff)
     assert [f["path"] for f in files] == ["src/app.py"]
+
+
+# --- readLines: what the model may not reach --------------------------------
+# The paths in a payload are chosen by the model, and the model reads the diff
+# of an untrusted repo. Whatever it names, the bytes that get uploaded come
+# from inside the repo under review.
+
+def test_a_window_path_cannot_escape_the_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (tmp_path / "secret.txt").write_text("SECRET\n")
+    assert readLines(str(repo), "../secret.txt") is None
+
+
+def test_an_absolute_window_path_is_refused(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SECRET\n")
+    assert readLines(str(repo), str(secret)) is None
+
+
+def test_a_symlink_out_of_the_repo_is_refused(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (tmp_path / "secret.txt").write_text("SECRET\n")
+    (repo / "link.txt").symlink_to(tmp_path / "secret.txt")
+    assert readLines(str(repo), "link.txt") is None
+
+
+def test_an_ordinary_file_in_the_repo_still_reads(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("one\ntwo\n")
+    assert readLines(str(repo), "a.py") == ["one", "two", ""]
+
+
+# --- malformed model output ------------------------------------------------
+# buildPayload runs after the review is already paid for, so a step whose
+# `lines` are junk loses its window and nothing else.
+
+def test_a_step_with_unusable_lines_loses_only_its_window(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("one\ntwo\nthree\n")
+    for junk in (["x"], "notalist", [None], [], {"a": 1}, None):
+        walkthroughs = [{"steps": [{"say": "s", "path": "a.py", "lines": junk}]}]
+        steps = stepWindows(walkthroughs, str(repo))[0]["steps"]
+        assert steps[0]["window"] is None
+        assert steps[0]["say"] == "s"
+
+
+def test_a_step_with_string_line_numbers_still_resolves(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("one\ntwo\nthree\n")
+    walkthroughs = [{"steps": [{"path": "a.py", "lines": ["2", "2"]}]}]
+    window = stepWindows(walkthroughs, str(repo))[0]["steps"][0]["window"]
+    assert window["hot"] == [2, 2]
+
+
+def test_impact_anchors_survive_an_unusable_line(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("one\ntwo\nthree\n")
+    windows = impactWindows([{"path": "a.py", "line": "nonsense"}], str(repo))
+    assert windows["a.py"]["start"] == 1

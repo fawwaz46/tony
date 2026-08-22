@@ -33,12 +33,12 @@ async function key(): Promise<CryptoKey> {
   return cached;
 }
 
-export async function seal(plaintext: string): Promise<Uint8Array> {
+export async function seal(plaintext: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const body = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     await key(),
-    new TextEncoder().encode(plaintext),
+    plaintext as BufferSource,
   );
   const out = new Uint8Array(nonce.length + body.byteLength);
   out.set(nonce, 0);
@@ -46,12 +46,12 @@ export async function seal(plaintext: string): Promise<Uint8Array> {
   return out;
 }
 
-export async function open(sealed: ArrayBuffer): Promise<string> {
+export async function open(sealed: ArrayBuffer): Promise<Uint8Array> {
   const bytes = new Uint8Array(sealed);
   const plain = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: bytes.slice(0, 12) },
     await key(),
     bytes.slice(12),
   );
-  return new TextDecoder().decode(plain);
+  return new Uint8Array(plain);
 }

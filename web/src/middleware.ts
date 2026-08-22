@@ -33,30 +33,53 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-export const onRequest: MiddlewareHandler = async (context, next) => {
-  // CSRF. A browser attaches Origin to every state-changing request, so a
-  // present-but-wrong Origin is a cross-site attempt and gets refused. An
-  // absent Origin means the caller is not a browser — the CLI, curl — and
-  // those authenticate with a bearer token, which a hostile page cannot make
-  // a browser send.
-  const method = context.request.method.toUpperCase();
-  if (UNSAFE.has(method)) {
-    const origin = context.request.headers.get("origin");
-    if (origin && origin !== siteOrigin(context.request, context.url.origin)) {
-      return new Response("cross-site request refused", { status: 403 });
-    }
-  }
+/**
+ * Is this state-changing request one of ours?
+ *
+ * Origin alone is not enough. A `<form>` submission is a navigation, and for
+ * navigations the browser serialises Origin according to the page's referrer
+ * policy — under `no-referrer` it sends the literal string `null`, which is
+ * truthy and never matches, so an Origin-only check refuses the site's own
+ * sign-out form. `fetch()` is unaffected, which is why the dashboard delete
+ * worked and sign-out did not.
+ *
+ * Sec-Fetch-Site says the same thing without the referrer-policy coupling: it
+ * is set by the browser, cannot be spoofed by a page, and is the signal to
+ * trust when present. Origin is the fallback for clients that omit it, and an
+ * absent Origin there means the caller is not a browser — the CLI, curl — and
+ * those authenticate with a bearer token, which a hostile page cannot make a
+ * browser send.
+ */
+export function sameSite(request: Request, fallbackOrigin: string): boolean {
+  const site = request.headers.get("sec-fetch-site");
+  // `none` is a user-initiated load (typed URL, bookmark); no other site is
+  // involved, so it is not cross-site.
+  if (site) return site === "same-origin" || site === "none";
+  const origin = request.headers.get("origin");
+  return !origin || origin === siteOrigin(request, fallbackOrigin);
+}
 
-  const response = await next();
+export const onRequest: MiddlewareHandler = async (context, next) => {
+  const method = context.request.method.toUpperCase();
+  const response =
+    UNSAFE.has(method) && !sameSite(context.request, context.url.origin)
+      ? new Response("cross-site request refused", {
+          status: 403,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        })
+      : await next();
   // The installer is a shell script piped into sh; page security headers do
   // not apply to it and only add noise.
   if (context.url.pathname === "/install.sh") return response;
   const h = response.headers;
   h.set("Content-Security-Policy", CSP);
   h.set("X-Content-Type-Options", "nosniff");
-  h.set("Referrer-Policy", "no-referrer");
-  // Reviews are private; a referrer or an embedding page has no business
-  // learning a review id.
+  // A review id is what grants access to a review, so it has no business
+  // reaching a third-party destination; `same-origin` sends nothing across an
+  // origin boundary. It is deliberately not `no-referrer`: that policy makes
+  // browsers send `Origin: null` on form submissions, which the CSRF check
+  // above then has to work around.
+  h.set("Referrer-Policy", "same-origin");
   h.set("X-Frame-Options", "DENY");
   h.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   return response;

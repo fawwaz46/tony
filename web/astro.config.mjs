@@ -3,8 +3,8 @@ import vercel from "@astrojs/vercel";
 
 export default defineConfig({
   // Static by default; API routes and /r/<id> opt out with `prerender = false`.
-  // The review page itself is client-rendered — the server never holds the key
-  // that opens a review, so there is nothing it could render.
+  // The review page is client-rendered so that one renderer — the bundle in
+  // src/renderer — draws both it and the offline page the CLI writes.
   output: "static",
   adapter: vercel(),
   // Astro's built-in CSRF check compares the Origin header against the origin

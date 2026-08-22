@@ -2,13 +2,55 @@
  * Trade a GitHub access token (from the CLI's device flow) for a tony token.
  *
  * The GitHub token is used once, to ask GitHub who this is, and never stored.
- * The tony token is minted here, returned once, and kept only as a hash — the
- * same posture as the delete tokens: a database leak leaks no usable secret.
+ * The tony token is minted here, returned once, and kept only as a hash — so a
+ * database leak leaks no usable secret.
  */
 import type { APIRoute } from "astro";
-import { migrate, sha256Hex, sql, throttle } from "../../../server/db";
+import { createToken, migrate, throttle, upsertUser, withDatabase } from "../../../server/db";
+import { env } from "../../../server/env";
 
 export const prerender = false;
+
+interface GitHubUser {
+  id: number;
+  login: string;
+  avatar_url?: string;
+}
+
+/**
+ * Who this token belongs to — but only if our own OAuth app issued it.
+ *
+ * `GET /user` is the obvious call and the wrong one: it answers for any valid
+ * token from any OAuth app. Someone who persuades a victim to authorise an
+ * unrelated app for something as innocuous as `read:user` could then post that
+ * token here and walk away with a tony token bound to the victim's account.
+ * `POST /applications/{client_id}/token` is the audience-checked equivalent —
+ * it authenticates as the app and 404s a token the app did not issue — and it
+ * returns the user, so it replaces the `/user` call rather than adding to it.
+ */
+async function tokenHolder(accessToken: string): Promise<GitHubUser | null> {
+  const clientId = env("GITHUB_CLIENT_ID");
+  const clientSecret = env("GITHUB_CLIENT_SECRET");
+  // Fail closed: without credentials there is no way to check the audience,
+  // and an unchecked token is exactly what this function exists to refuse.
+  if (!clientId || !clientSecret) return null;
+
+  const resp = await fetch(`https://api.github.com/applications/${clientId}/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "User-Agent": "tony",
+    },
+    body: JSON.stringify({ access_token: accessToken }),
+  });
+  if (!resp.ok) return null;
+
+  const user = (await resp.json())?.user;
+  if (typeof user?.id !== "number" || typeof user?.login !== "string") return null;
+  return user as GitHubUser;
+}
 
 export const POST: APIRoute = async ({ request, clientAddress }) => {
   // This route mints a long-lived CLI token, so it must not be free to hammer.
@@ -21,23 +63,15 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     return new Response("missing accessToken", { status: 400 });
   }
 
-  const ghUser = await fetch("https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "tony" },
-  });
-  if (!ghUser.ok) return new Response("github rejected the token", { status: 401 });
-  const gh = await ghUser.json();
+  const gh = await tokenHolder(accessToken);
+  if (!gh) return new Response("github rejected the token", { status: 401 });
 
-  await migrate();
-  const rows = await sql`
-    INSERT INTO users (github_id, github_login) VALUES (${gh.id}, ${gh.login})
-    ON CONFLICT (github_id) DO UPDATE SET github_login = ${gh.login}
-    RETURNING id`;
-  const userId = rows[0].id;
+  return withDatabase(async () => {
+    await migrate();
+    const token = await createToken(await upsertUser(gh));
 
-  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-  await sql`INSERT INTO tokens (hash, user_id) VALUES (${await sha256Hex(token)}, ${userId})`;
-
-  return new Response(JSON.stringify({ token, githubLogin: gh.login }), {
-    headers: { "Content-Type": "application/json" },
+    return new Response(JSON.stringify({ token, githubLogin: gh.login }), {
+      headers: { "Content-Type": "application/json" },
+    });
   });
 };
