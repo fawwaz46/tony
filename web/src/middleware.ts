@@ -14,6 +14,10 @@
  * site, and images limited to ourselves plus GitHub avatars.
  */
 import type { MiddlewareHandler } from "astro";
+import { siteOrigin } from "./server/safe";
+
+/** Methods that can change something, and therefore need CSRF protection. */
+const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const CSP = [
   "default-src 'self'",
@@ -30,6 +34,19 @@ const CSP = [
 ].join("; ");
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
+  // CSRF. A browser attaches Origin to every state-changing request, so a
+  // present-but-wrong Origin is a cross-site attempt and gets refused. An
+  // absent Origin means the caller is not a browser — the CLI, curl — and
+  // those authenticate with a bearer token, which a hostile page cannot make
+  // a browser send.
+  const method = context.request.method.toUpperCase();
+  if (UNSAFE.has(method)) {
+    const origin = context.request.headers.get("origin");
+    if (origin && origin !== siteOrigin(context.request, context.url.origin)) {
+      return new Response("cross-site request refused", { status: 403 });
+    }
+  }
+
   const response = await next();
   // The installer is a shell script piped into sh; page security headers do
   // not apply to it and only add noise.

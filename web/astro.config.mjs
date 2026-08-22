@@ -7,5 +7,10 @@ export default defineConfig({
   // that opens a review, so there is nothing it could render.
   output: "static",
   adapter: vercel(),
+  // Astro's built-in CSRF check compares the Origin header against the origin
+  // it computed for the request, which behind Vercel's proxy is localhost —
+  // so every same-site POST was rejected as cross-site. We run the equivalent
+  // check in middleware against the forwarded host instead.
+  security: { checkOrigin: false },
   build: { inlineStylesheets: "auto" },
 });

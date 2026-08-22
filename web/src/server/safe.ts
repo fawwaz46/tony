@@ -69,7 +69,11 @@ export function siteOrigin(request: Request, fallback: string): string {
 
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   if (host && /^[a-zA-Z0-9.:-]+$/.test(host)) {
-    const proto = request.headers.get("x-forwarded-proto")?.split(",")[0] ?? "https";
+    // Fall back to the scheme this request actually came in on rather than
+    // assuming https, so http://localhost during development still matches.
+    const proto =
+      request.headers.get("x-forwarded-proto")?.split(",")[0] ??
+      new URL(fallback).protocol.replace(":", "");
     return `${proto}://${host}`;
   }
   return fallback;
