@@ -1,7 +1,7 @@
 # CI for tony's own repo: runs the test suite and proves the viewer bundle and
 # the site still build. Nothing here touches a user's repo — deploys of the
-# site happen through Vercel, and PyPI releases are a manual `python -m build`
-# + upload for now.
+# site happen through Vercel, and PyPI releases happen in release.yml when a
+# version tag is pushed.
 name: ci
 
 on:
@@ -28,6 +28,9 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
       - run: python -m pytest src/tests -q
+      # The installer must never ask for a version this repo has not released.
+      # Asking for one it cannot get is how the first install attempt failed.
+      - run: python .github/check_installer_floor.py
 
   viewer-and-site:
     runs-on: ubuntu-latest

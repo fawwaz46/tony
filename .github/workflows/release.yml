@@ -1,0 +1,88 @@
+# Publishes tony-cli to PyPI when a version tag is pushed.
+#
+#   git tag v0.2.1 && git push origin v0.2.1
+#
+# Releases go out through PyPI Trusted Publishing (OIDC), so there is no API
+# token stored in this repo. The trusted publisher is configured on PyPI
+# against this workflow filename and the `pypi` environment below; changing
+# either name means updating that configuration too.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # The tag is the only input, and it is a claim about what is in the tree.
+  # Check it against pyproject before anything is built or uploaded — a PyPI
+  # version cannot be replaced once it exists, only yanked.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Tag must match the version in pyproject.toml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $GITHUB_REF_NAME says $tag, pyproject.toml says $pkg" >&2
+            exit 1
+          fi
+          echo "releasing $pkg"
+
+      # Publishing is irreversible, so the suite runs here too rather than
+      # trusting that the commit was green when it landed on main.
+      - run: pip install -e ".[dev]"
+      - run: python -m pytest src/tests -q
+
+      - run: pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # mints the OIDC token PyPI trades for an upload token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # The failure this repo has already shipped once: an installer asking for a
+  # version PyPI does not serve. Prove the release is installable the way a
+  # user installs it, from the real index, before calling the release done.
+  smoke:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install from PyPI and run it
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # A fresh upload takes a moment to show up on the index.
+          for attempt in 1 2 3 4 5 6; do
+            if pip install --index-url https://pypi.org/simple "tony-cli==$version"; then
+              tony --help
+              exit 0
+            fi
+            echo "not on the index yet, retrying ($attempt)"
+            sleep 20
+          done
+          echo "tony-cli==$version never became installable" >&2
+          exit 1
