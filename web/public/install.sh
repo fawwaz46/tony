@@ -12,7 +12,7 @@
 set -eu
 
 PKG="tony-cli"
-MIN="0.2.0"
+MIN="0.3.0"
 
 # Resolve from PyPI explicitly. Both installers honour an ambient index
 # setting, so on a machine configured for an internal mirror `tony-cli` would

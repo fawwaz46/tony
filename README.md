@@ -77,6 +77,35 @@ server to be able to open a review.
 
 Local review needs no account and never leaves the machine: `tony --local`.
 
+## Update
+
+```sh
+tony update
+```
+
+Uses whichever of uv, pipx, or pip installed tony, and resolves from PyPI
+explicitly so a machine pointed at an internal mirror cannot decide what
+`tony-cli` is. `tony --version` says what you have; `tony --help` lists every
+command.
+
+## Uninstall
+
+```sh
+tony uninstall
+```
+
+Removing the package by itself would leave the parts worth removing: your
+`ANTHROPIC_API_KEY` and site login in `~/.tony`, and a `.tony/` directory of
+past reviews inside every repository you ran tony in — those hold source code.
+`tony uninstall` revokes the site token, lists everything it found and waits
+for you to type `yes`, deletes it, then removes the package with whichever of
+uv, pipx, or pip installed it.
+
+It searches your home directory for stray review directories; `--no-scan`
+limits it to the current repository, and `--yes` skips the prompt. Reviews you
+published to the site are separate — take those down with `tony unpublish <id>`
+before uninstalling, or they stay up.
+
 ## Development
 
 ```sh

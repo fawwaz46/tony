@@ -63,26 +63,50 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   # The failure this repo has already shipped once: an installer asking for a
-  # version PyPI does not serve. Prove the release is installable the way a
-  # user installs it, from the real index, before calling the release done.
+  # version PyPI does not serve. Prove the release works the way a user meets
+  # it — the real install.sh, then the real updater — before calling it done.
   smoke:
     needs: publish
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install from PyPI and run it
+      - name: pipx, and the directory it puts commands in
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          # A fresh upload takes a moment to show up on the index.
+          python -m pip install --user pipx
+          # install.sh looks for pipx on PATH, and pipx installs `tony` here.
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install the way the website tells people to
+        run: |
+          # A fresh upload takes a moment to appear on the index.
           for attempt in 1 2 3 4 5 6; do
-            if pip install --index-url https://pypi.org/simple "tony-cli==$version"; then
-              tony --help
-              exit 0
-            fi
-            echo "not on the index yet, retrying ($attempt)"
+            if sh install.sh; then exit 0; fi
+            echo "not installable yet, retrying ($attempt)"
             sleep 20
           done
-          echo "tony-cli==$version never became installable" >&2
+          echo "install.sh could not install this release" >&2
           exit 1
+
+      - name: It is the version we just tagged
+        run: |
+          installed="$(tony --version | awk '{print $2}')"
+          if [ "$installed" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "installed $installed, tagged ${GITHUB_REF_NAME#v}" >&2
+            exit 1
+          fi
+
+      # `tony update` is the one command whose failure mode is silence: every
+      # installer exits 0 for "already at latest", so a broken updater looks
+      # exactly like a working one. On a machine that just installed the newest
+      # release, the only correct answer is that there is nothing to do.
+      - name: The updater knows it is current
+        run: |
+          out="$(tony update)"
+          echo "$out"
+          echo "$out" | grep -q "already on the latest version" || {
+            echo "update did not recognise the newest release as current" >&2
+            exit 1
+          }

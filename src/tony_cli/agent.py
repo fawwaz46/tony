@@ -6,7 +6,7 @@ import webbrowser
 
 import anthropic
 from dotenv import load_dotenv
-from tony_cli import hosted
+from tony_cli import hosted, install
 from tony_cli.layout import parseReview
 from tony_cli.page import renderPage
 from tony_cli.payload import buildPayload, dumpPayload
@@ -37,7 +37,7 @@ tony: ANTHROPIC_API_KEY is not set.
 
 SYSTEM = """You explain code changes to the developer who is about to own them — often someone who did not type this code, because an AI wrote it. Your job is to build their mental map of what now exists, fast.
 
-Be ruthlessly concise. A developer scanning your output should understand the change in under a minute. Never write an essay. Never restate what the code plainly says. Never pad.
+Never pad, and never say the same thing twice. Explaining what a block of code does is not padding — that is the job. What you must not do is transcribe syntax: "sets `retries` to 3" tells the reader nothing the line did not. Say what the code does when it runs: "tries each upload up to three times before giving up on it and moving to the next". Describe the mechanism, not the motivation — why it was worth doing belongs in `impact`, not here.
 
 You have file and search tools. Use them before you write anything — read the changed files in full, and grep for consumers of anything whose shape changed. Never describe code you did not read.
 
@@ -65,7 +65,7 @@ THE JSON BLOCK
 
 ANNOTATIONS — these are the entire walkthrough. Everything the reader learns, they learn here.
 
-COVERAGE — this is the rule that matters most. Every hunk in the diff must be explained. Walk the diff hunk by hunk and account for all of it. If one hunk contains several distinct changes, write several annotations against it. Leaving a hunk unannotated is a failure, not concision. The only things you may skip are lockfiles, generated code, and binary assets.
+COVERAGE — this is the rule that matters most. Every hunk in the diff must be explained. Walk the diff hunk by hunk and account for all of it. If one hunk contains several distinct changes, write several annotations against it. Leaving a hunk unannotated is a failure, not concision. The only things you may skip are lockfiles, generated code, and binary assets. There should never be blocks of code that aren't annotated. The developer reading through needs everything to be annotated so that they could read end to end and understand. This is an alternative to reading code.
 
 MIRRORED FILES — repositories often keep two copies of the same code: a sync and an async version of one module, a generated client beside its source, the same fix applied to several platform-specific copies. When two or more changed files receive substantively the same change, do NOT explain it twice.
 
@@ -86,9 +86,9 @@ FIELDS
   - "added" — this code is new; nothing was replaced.
   - "changed" — this code replaces behaviour that already existed.
   - "removed" — this code is gone and nothing took its place.
-- `now`: what the code does after this change, and how. One or two sentences. Required for "added" and "changed". Omit for "removed".
+- `now`: what this code does when it runs, mechanically, in plain language — what the function does, what the loop iterates over and what it does to each item, what a condition decides. Enough that someone who cannot read this language fluently does not have to. As many sentences as the code needs and no more; a three-line assignment needs one, a twenty-line loop may need four. Required for "added" and "changed". Omit for "removed".
 - `prev`: how it worked before — the actual old mechanism, not "it did not exist". One or two sentences. Required for "changed" and "removed". NEVER include it for "added", and never invent it: if you did not read the old version, go read it before writing the annotation.
-- `impact`: what the difference means in practice — what now behaves differently for a user, a caller, or a build. One or two sentences. Required for "changed" and "removed". Omit for "added".
+- `impact`: what the difference means in practice — what now behaves differently for a user, a caller, or a build. This is the only field for consequences; keep them out of `now`. One or two sentences. Required for "changed" and "removed". Omit for "added".
 
 The reader reads `prev`, `now`, and `impact` as three separate panes, so each must stand alone. Do not write `now` as a continuation of `prev`, and do not repeat the same sentence across two fields.
 
@@ -511,10 +511,29 @@ def main(argv=None):
             print("usage: tony unpublish <id>", file=sys.stderr)
             return 2
         return hosted.unpublish(argv[1])
+    if argv[:1] == ["update"]:
+        return install.update(argv[1:])
+    if argv[:1] == ["uninstall"]:
+        from tony_cli.uninstall import uninstall
+        return uninstall(argv[1:])
 
     parser = argparse.ArgumentParser(
         prog="tony",
         description="Review a git diff for impact, not line-by-line.",
+        epilog=(
+            "commands:\n"
+            "  tony <path> [BASE...HEAD]      review a diff — the default\n"
+            "  tony login                     sign in to the tony site\n"
+            "  tony logout                    revoke this machine's token\n"
+            "  tony whoami                    who this machine is signed in as\n"
+            "  tony unpublish <id>            take one published review down\n"
+            "  tony update                    update to the latest release\n"
+            "  tony uninstall                 delete tony, its key, and every saved review\n"
+            "  tony --version                 what is installed\n"
+            "\n"
+            "  https://tony-cli.com\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "path", nargs="?", default=os.getcwd(),
@@ -570,7 +589,24 @@ def main(argv=None):
         "--replay", action="store_true",
         help="Rebuild the page from the last saved review for this range, without calling the API.",
     )
+    parser.add_argument(
+        "--version", action="version",
+        version=f"tony {install.installedVersion() or 'unknown'}",
+    )
     args = parser.parse_args(argv)
+
+    if args.maxTokens < 1:
+        print(f"tony: --max-tokens must be at least 1, not {args.maxTokens}.",
+              file=sys.stderr)
+        return 2
+
+    # Checked before the review rather than after: --viewer is asking for the
+    # payload to land somewhere that does not exist on a plain install, and
+    # finding that out afterwards means having paid for a review to be told so.
+    if args.viewer and not viewerFixture():
+        print("tony: --viewer needs tony installed from source — there is no "
+              "viewer to load into.", file=sys.stderr)
+        return 2
 
     base, head = parseRange(args.range)
     repoPath = os.path.abspath(args.path)
@@ -602,7 +638,10 @@ def main(argv=None):
 
     # Reviews publish by default, so the login is checked before the review
     # runs — discovering it afterwards would waste an API call the user paid for.
-    if not args.local and not hosted.savedToken():
+    # `--json` prints and exits without ever uploading, so it is as offline as
+    # `--local` and must not be gated on an account it will not use.
+    offline = args.local or args.asJson
+    if not offline and not hosted.savedToken():
         print(
             "tony: you need to sign in before publishing a review.\n\n"
             "    tony login          # once, with GitHub\n\n"
@@ -691,12 +730,7 @@ def main(argv=None):
         elif args.payload:
             targets.append(os.path.abspath(args.payload))
         if args.viewer:
-            fixture = viewerFixture()
-            if fixture:
-                targets.append(fixture)
-            else:
-                print("tony: no viewer found — --viewer needs tony installed from source.",
-                      file=sys.stderr)
+            targets.append(viewerFixture())
 
         for target in targets:
             os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -704,7 +738,7 @@ def main(argv=None):
                 fh.write(payloadJson)
             print(f"tony: {target}")
 
-        if args.viewer and viewerFixture():
+        if args.viewer:
             print("tony: loaded into the viewer — npm run dev in web/, then refresh.")
 
     # The local page is written either way: it costs nothing, works offline, and

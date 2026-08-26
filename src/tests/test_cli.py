@@ -129,3 +129,41 @@ def test_runTool_serves_reads_inside_the_repo(tmp_path):
     repo = makeRepo(tmp_path / "r")
     out = runTool("readFile", {"path": str(repo / "f.txt")}, str(repo))
     assert out == "one\n"
+
+
+# --- flags must fail before the review is paid for --------------------------
+
+def test_json_does_not_demand_an_account(tmp_path, monkeypatch, capsys):
+    """--json prints and exits without uploading, so it needs no login.
+
+    It used to share the publish gate, which asked people to sign in to a site
+    the run would never contact.
+    """
+    repo = makeRepo(tmp_path / "r")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat"], check=True)
+    (repo / "f.txt").write_text("one\ntwo\n")
+    subprocess.run(["git", "-C", str(repo), "commit", "-qam", "c2"], check=True)
+
+    monkeypatch.setattr("tony_cli.hosted.savedToken", lambda: None)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    code = main([str(repo), "main...HEAD", "--json"])
+    err = capsys.readouterr().err
+    assert "sign in" not in err          # it got past the publish gate
+    assert "ANTHROPIC_API_KEY" in err    # and stopped on the key it does need
+    assert code == 2
+
+
+def test_max_tokens_below_one_is_an_argument_error(tmp_path, capsys):
+    """A ceiling no review fits under is a typo, caught before any work."""
+    repo = makeRepo(tmp_path / "r")
+    assert main([str(repo), "--local", "--max-tokens", "0"]) == 2
+    assert "--max-tokens must be at least 1" in capsys.readouterr().err
+
+
+def test_viewer_without_a_source_install_fails_first(tmp_path, monkeypatch, capsys):
+    """Not after a paid-for review — there is nowhere for the payload to go."""
+    repo = makeRepo(tmp_path / "r")
+    monkeypatch.setattr("tony_cli.agent.viewerFixture", lambda: None)
+    assert main([str(repo), "--local", "--viewer"]) == 2
+    assert "installed from source" in capsys.readouterr().err
