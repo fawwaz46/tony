@@ -47,6 +47,14 @@
 .hero .lede { font-size: 1.05rem; line-height: 1.55; color: var(--ink-3);
   max-width: 58ch; margin: 0 0 2.25rem; }
 .hero .lede b { color: var(--ink-2); font-weight: 500; }
+/* The note and the signature are the same voice at a lower volume — a hand
+   written aside under the pitch, not a second pitch. */
+.hero .lede.note { font-size: .92rem; color: var(--ink-4); margin-bottom: 1.5rem; }
+.hero .lede.note a { color: var(--ink-3); text-decoration: underline;
+  text-underline-offset: 2px; }
+.hero .lede.note a:hover { color: var(--ink); }
+.hero .lede.sign { font-size: .92rem; color: var(--ink-4); margin-bottom: 2.25rem;
+  line-height: 1.5; }
 .cta-row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
 
 /* ---- a command you can copy ---- */
