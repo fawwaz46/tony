@@ -96,7 +96,11 @@
   letter-spacing: -.02em; }
 .three p { font-size: .875rem; line-height: 1.55; color: var(--ink-3); margin: 0; }
 @media (max-width: 52rem) {
-  .three { grid-template-columns: 1fr; }
+  /* `.three.two` is more specific than `.three`, so collapsing only `.three`
+     left the two-up section at two columns on a phone — and its 404px + 191px
+     tracks set the width of the whole document, clipping every paragraph on
+     the page at the right edge. */
+  .three, .three.two { grid-template-columns: 1fr; }
   .three > div { border-right: 0; border-bottom: 1px solid var(--rule); padding-left: 0; }
   .three > div:last-child { border-bottom: 0; }
 }
@@ -115,7 +119,12 @@
 .demo .wrap { max-width: none; padding: 0 1.25rem; }
 .demo header { padding-top: 1.5rem; }
 .demo .hunk.full { max-height: 22rem; }
-.demo-scroll { max-height: 40rem; overflow-y: auto; }
+/* Both axes. This frame embeds a whole review UI, and that UI has a natural
+   minimum width — its tab row does not shrink. Without clipping here that
+   minimum became the width of the document, and every paragraph on the page
+   was cut off at the right edge on a phone. */
+.demo { max-width: 100%; }
+.demo-scroll { max-height: 40rem; overflow: auto; }
 
 /* ---- dashboard ---- */
 .rlist { border-top: 1px solid var(--rule); }

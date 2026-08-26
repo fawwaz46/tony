@@ -41,7 +41,12 @@ h1{font-size:clamp(1.25rem,2.3vw,1.65rem);font-weight:700;letter-spacing:-.042em
 .meta .pos{color:var(--pos)} .meta .neg{color:var(--neg)}
 
 /* Section headers and tabs are eyebrows: uppercase mono, positive tracking, bracketed. */
-.tabs-main{display:flex;gap:0;border-bottom:1px solid var(--rule);margin-bottom:1.25rem}
+/* Scrolls rather than wraps: three uppercase tabs do not fit a phone, and
+   wrapping them puts a lone tab on its own line above the diff. */
+.tabs-main{display:flex;gap:0;border-bottom:1px solid var(--rule);margin-bottom:1.25rem;
+  overflow-x:auto;scrollbar-width:none}
+.tabs-main::-webkit-scrollbar{display:none}
+.mt{flex:none}
 .mt{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
   background:none;border:0;border-bottom:1px solid transparent;color:var(--ink-4);
   padding:.9rem 1.15rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;
