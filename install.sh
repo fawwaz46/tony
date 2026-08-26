@@ -24,9 +24,11 @@ PIP_INDEX_URL="$INDEX"; export PIP_INDEX_URL
 
 if command -v uv >/dev/null 2>&1; then
   echo "tony: installing with uv..."
+  USED=uv
   uv tool install --force "$PKG>=$MIN"
 elif command -v pipx >/dev/null 2>&1; then
   echo "tony: installing with pipx..."
+  USED=pipx
   pipx install --force "$PKG>=$MIN"
 else
   echo "tony: needs uv or pipx to install, and found neither."
@@ -45,7 +47,25 @@ fi
 echo
 echo "tony: installed. Try it inside any git repo:"
 echo
-echo "    tony main...my-branch"
+echo "    tony main...my-branch          # review a branch against main"
+echo "    tony --help                    # every command"
 echo
 echo "First run will ask for an ANTHROPIC_API_KEY and tell you where to put it."
-command -v tony >/dev/null 2>&1 || echo "note: open a new shell if 'tony' is not found yet."
+
+# Both installers put commands in a directory that is often not on PATH, and
+# they only say so on the install that creates it. Telling someone to open a
+# new shell is wrong when nothing added the directory in the first place —
+# the shell has to be taught about it once, and each installer has its own
+# command for that.
+if ! command -v tony >/dev/null 2>&1; then
+  echo
+  echo "note: 'tony' is not on your PATH yet. Fix it once with:"
+  echo
+  case "${USED:-}" in
+    uv)   echo "    uv tool update-shell" ;;
+    pipx) echo "    pipx ensurepath" ;;
+    *)    echo "    pipx ensurepath        # or: uv tool update-shell" ;;
+  esac
+  echo
+  echo "  then open a new shell."
+fi

@@ -115,6 +115,24 @@ def uninstall(argv):
         print("usage: tony uninstall [--yes] [--no-scan]", file=sys.stderr)
         return 2
 
+    # A source checkout cannot be uninstalled — deleting someone's working tree
+    # is not on the table — so this command cannot keep its promise here. Doing
+    # the half it can do anyway is the worst outcome available: the API key and
+    # every saved review are gone, the tool is still installed and still on
+    # PATH, and `tony --version` reports the same number as before. Refuse
+    # instead, and say exactly what to run.
+    if isSourceCheckout():
+        print(
+            f"tony: this is a source checkout at {sys.prefix} — an editable\n"
+            f"      install, not something to uninstall. Nothing was deleted.\n\n"
+            f"  To remove it, from the checkout:\n\n"
+            f"      pip uninstall tony-cli\n\n"
+            f"  To clear the key and saved reviews without touching the code:\n\n"
+            f"      rm -rf {configDir()}\n",
+            file=sys.stderr,
+        )
+        return 2
+
     config = configDir()
     hasConfig = os.path.isdir(config)
     if scan:
@@ -123,7 +141,6 @@ def uninstall(argv):
 
     kind = installer()
     command = uninstallCommand(kind)
-    source = isSourceCheckout()
 
     print("\nThis will delete:\n")
     if hasConfig:
@@ -134,10 +151,7 @@ def uninstall(argv):
     if not hasConfig and not reports:
         print("  (nothing — tony has written nothing to this machine)")
     print()
-    if source:
-        print(f"Then: nothing. This is a source checkout at {sys.prefix};")
-        print("      removing the package would delete your working tree, so it stays.")
-    elif os.name == "nt":
+    if os.name == "nt":
         print(f"Then: {' '.join(command)}")
         print("      Windows cannot delete a running program, so run that yourself after.")
     else:
@@ -176,10 +190,6 @@ def uninstall(argv):
               "installed — fix the errors above and run this again.",
               file=sys.stderr)
         return 1
-
-    if source:
-        print("tony: local data removed. The checkout itself is yours to delete.")
-        return 0
 
     if os.name == "nt":
         print("tony: local data removed. Finish with:")

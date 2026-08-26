@@ -33,8 +33,14 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(hosted, "CONFIG_DIR", str(config))
     monkeypatch.setattr(hosted, "CREDENTIALS", str(config / "credentials.json"))
     monkeypatch.setattr(hosted, "savedToken", lambda: None)
-    monkeypatch.setattr(u, "isSourceCheckout", lambda: True)  # never exec a real uninstaller
-    monkeypatch.setattr(install, "isSourceCheckout", lambda: True)
+    # Not a checkout — that path refuses and is tested on its own. The real
+    # uninstaller is blocked one level lower, at the exec that would run it.
+    monkeypatch.setattr(u, "isSourceCheckout", lambda: False)
+    monkeypatch.setattr(install, "isSourceCheckout", lambda: False)
+
+    def noExec(*a):
+        raise SystemExit(0)   # what execvp does to this process, minus the pipx
+    monkeypatch.setattr(os, "execvp", noExec)
     monkeypatch.chdir(home)
     return home
 
@@ -92,17 +98,34 @@ def test_anything_but_yes_deletes_nothing(home, monkeypatch):
     assert (home / "code" / "repo" / ".tony").exists()
 
 
-def test_source_checkout_keeps_the_working_tree(home, capsys):
-    u.uninstall(["--yes"])
-    out = capsys.readouterr().out
-    assert "working tree" in out
-    assert not (home / ".tony").exists()  # data still goes
+def uninstalled(argv=("--yes",)):
+    """Run the uninstall, treating the exec of the package manager as success."""
+    try:
+        return u.uninstall(list(argv))
+    except SystemExit as e:
+        return e.code
+
+
+def test_source_checkout_deletes_nothing_at_all(home, monkeypatch, capsys):
+    monkeypatch.setattr(u, "isSourceCheckout", lambda: True)
+    """It cannot uninstall a working tree, so it must not do the destructive half.
+
+    Deleting the key and every saved review while leaving the tool installed and
+    on PATH is the worst outcome available: `tony --version` reports the same
+    number as before, so it reads as a no-op that quietly took the data with it.
+    """
+    assert u.uninstall(["--yes"]) == 2
+    assert (home / ".tony" / ".env").exists()
+    assert (home / "code" / "repo" / ".tony").exists()
+    err = capsys.readouterr().err
+    assert "Nothing was deleted" in err
+    assert "pip uninstall tony-cli" in err
 
 
 # --- deleting --------------------------------------------------------------
 
 def test_yes_removes_the_key_and_every_review(home):
-    assert u.uninstall(["--yes"]) == 0
+    assert uninstalled() == 0
     assert not (home / ".tony").exists()
     assert not (home / "code" / "repo" / ".tony").exists()
     assert (home / "code" / "repo").exists()  # the repo itself is untouched
@@ -115,7 +138,7 @@ def test_revokes_the_site_token_before_deleting_it(home, monkeypatch):
     real = u.remove
     monkeypatch.setattr(u, "remove", lambda p: order.append(f"rm {p}") or real(p))
 
-    u.uninstall(["--yes"])
+    uninstalled()
     assert order[0] == "revoked"
 
 
@@ -139,7 +162,7 @@ def test_uninstall_works_after_logout(home, monkeypatch):
         raise AssertionError("uninstall tried to log out with no token")
     monkeypatch.setattr(hosted, "logout", refuse)
 
-    assert u.uninstall(["--yes"]) == 0
+    assert uninstalled() == 0
     assert not (home / ".tony").exists()          # the API key still goes
     assert not (home / "code" / "repo" / ".tony").exists()
 
@@ -149,7 +172,7 @@ def test_uninstall_with_no_config_dir_at_all(home, monkeypatch):
     import shutil
     shutil.rmtree(home / ".tony")
     monkeypatch.setattr(hosted, "savedToken", lambda: None)
-    assert u.uninstall(["--yes"]) == 0
+    assert uninstalled() == 0
 
 
 def test_failed_deletion_leaves_tony_installed(home, monkeypatch, capsys):
