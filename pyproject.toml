@@ -1,6 +1,6 @@
 [project]
 name = "tony-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "Explains a git diff to whoever now owns it — annotated changes, blast radius, and steppable runtime walkthroughs."
 readme = "README.md"
 license = { file = "LICENSE" }

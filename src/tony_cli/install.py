@@ -57,11 +57,18 @@ def uninstallCommand(kind):
 
 
 def updateCommand(kind):
+    """The upgrade, told to ignore its own cache.
+
+    Every one of these caches the index, and a cache that is minutes stale
+    resolves to the version before the one just released — then reports
+    "already at latest" and exits 0. An update that runs once a month should
+    pay for a fresh lookup rather than confidently do nothing.
+    """
     if kind == "uv":
-        return ["uv", "tool", "upgrade", PKG]
+        return ["uv", "tool", "upgrade", "--refresh", PKG]
     if kind == "pipx":
-        return ["pipx", "upgrade", PKG]
-    return [sys.executable, "-m", "pip", "install", "--upgrade", PKG]
+        return ["pipx", "upgrade", PKG, "--pip-args=--no-cache-dir"]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", PKG]
 
 
 def installedVersion():
@@ -71,6 +78,27 @@ def installedVersion():
         return version(PKG)
     except Exception:
         return None
+
+
+def installedOnDisk():
+    """The version the environment's metadata records, re-read from disk.
+
+    `installedVersion` answers from what this interpreter imported at startup,
+    which is precisely the version an upgrade just replaced. The dist-info
+    directory on disk is the only thing in this process that knows what is
+    actually installed now.
+    """
+    import glob
+    import sysconfig
+
+    purelib = sysconfig.get_paths().get("purelib")
+    if not purelib:
+        return None
+    found = glob.glob(os.path.join(purelib, "tony_cli-*.dist-info"))
+    if not found:
+        return None
+    name = os.path.basename(sorted(found)[-1])
+    return name[len("tony_cli-"):-len(".dist-info")] or None
 
 
 def latestVersion(timeout=10):
@@ -128,11 +156,26 @@ def update(argv=()):
         print(f"tony: {kind} could not update tony.", file=sys.stderr)
         return result.returncode
 
-    # This interpreter still has the old version loaded, so it cannot read the
-    # new one back. PyPI's answer is the honest thing to report; without it,
-    # say what happened rather than asserting an outcome.
-    if latest:
-        print(f"\ntony: updated {before or '?'} -> {latest}.")
+    # What PyPI calls newest is not what just landed on this machine. An
+    # installer resolving against a stale index cache prints "already at latest"
+    # for a version that is not the latest, and exits 0 — reporting the upgrade
+    # from PyPI's answer turns that into a confident lie.
+    after = installedOnDisk()
+
+    if after and before and after == before:
+        print(
+            f"\ntony: still {after} — {kind} did not install a newer version, "
+            f"though PyPI offers {latest or 'a newer one'}.\n"
+            f"      Try again in a minute; a release takes a moment to reach "
+            f"every mirror.\n",
+            file=sys.stderr,
+        )
+        return 1
+
+    if after and before:
+        print(f"\ntony: updated {before} -> {after}.")
+    elif after:
+        print(f"\ntony: now on {after}.")
     else:
         print("\ntony: the installer finished. Check it with `tony --version`.")
     return 0

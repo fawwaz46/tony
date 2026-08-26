@@ -21,6 +21,9 @@ def notSource(monkeypatch):
     # real index would start taking the "already latest" branch and stop
     # exercising the thing it was written for.
     monkeypatch.setattr(install, "latestVersion", lambda *a, **k: None)
+    # Default to "something moved", so tests about other things do not trip the
+    # guard against reporting a no-op as an upgrade.
+    monkeypatch.setattr(install, "installedOnDisk", lambda: "9.9.9")
 
 
 # --- detection -------------------------------------------------------------
@@ -29,14 +32,16 @@ def test_reads_the_receipt_uv_leaves(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
     (tmp_path / "uv-receipt.toml").write_text("")
     assert install.installer() == "uv"
-    assert install.updateCommand("uv") == ["uv", "tool", "upgrade", "tony-cli"]
+    assert install.updateCommand("uv") == ["uv", "tool", "upgrade", "--refresh", "tony-cli"]
 
 
 def test_reads_the_receipt_pipx_leaves(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
     (tmp_path / "pipx_metadata.json").write_text("{}")
     assert install.installer() == "pipx"
-    assert install.updateCommand("pipx") == ["pipx", "upgrade", "tony-cli"]
+    assert install.updateCommand("pipx") == [
+        "pipx", "upgrade", "tony-cli", "--pip-args=--no-cache-dir",
+    ]
 
 
 def test_falls_back_to_pip_in_a_plain_venv(tmp_path, monkeypatch):
@@ -65,7 +70,7 @@ def test_update_runs_the_installers_upgrade(notSource, monkeypatch, capsys):
     monkeypatch.setattr(install, "installer", lambda: "pipx")
     monkeypatch.setattr(subprocess, "run", fake)
     assert install.update() == 0
-    assert ran["command"] == ["pipx", "upgrade", "tony-cli"]
+    assert ran["command"] == ["pipx", "upgrade", "tony-cli", "--pip-args=--no-cache-dir"]
     assert ran["index"] == "https://pypi.org/simple"
 
 
@@ -150,6 +155,7 @@ def test_already_latest_does_not_run_the_installer(notSource, monkeypatch, capsy
 def test_a_real_upgrade_reports_both_versions(notSource, monkeypatch, capsys):
     monkeypatch.setattr(install, "installedVersion", lambda: "0.2.0")
     monkeypatch.setattr(install, "latestVersion", lambda *a, **k: "0.3.0")
+    monkeypatch.setattr(install, "installedOnDisk", lambda: "0.3.0")
     monkeypatch.setattr(install, "installer", lambda: "pipx")
     monkeypatch.setattr(
         subprocess, "run", lambda c, env=None: subprocess.CompletedProcess(c, 0)
@@ -164,6 +170,7 @@ def test_an_unreachable_index_still_updates(notSource, monkeypatch, capsys):
     """PyPI being unreachable must not block an upgrade, only the reporting."""
     monkeypatch.setattr(install, "installedVersion", lambda: "0.2.0")
     monkeypatch.setattr(install, "latestVersion", lambda *a, **k: None)
+    monkeypatch.setattr(install, "installedOnDisk", lambda: None)  # no metadata to read
     ran = []
     monkeypatch.setattr(
         subprocess, "run",
@@ -187,3 +194,55 @@ def test_latest_version_survives_a_broken_index(monkeypatch):
         raise install.httpx.ConnectError("no route")
     monkeypatch.setattr(install.httpx, "get", explode)
     assert install.latestVersion() is None
+
+
+# --- reporting what actually happened, not what was hoped for ---------------
+
+def test_reports_the_version_that_actually_landed(notSource, monkeypatch, capsys):
+    """Not the one PyPI called newest.
+
+    An installer resolving against a stale index cache prints "already at latest"
+    for a version that is not, and exits 0. Reporting the upgrade from PyPI's
+    answer turned that into "updated 0.3.0 -> 0.3.1" on a machine still running
+    0.3.0.
+    """
+    monkeypatch.setattr(install, "installedVersion", lambda: "0.3.0")
+    monkeypatch.setattr(install, "latestVersion", lambda *a, **k: "0.3.1")
+    monkeypatch.setattr(install, "installedOnDisk", lambda: "0.3.0")  # nothing moved
+    monkeypatch.setattr(install, "installer", lambda: "pipx")
+    monkeypatch.setattr(
+        subprocess, "run", lambda c, env=None: subprocess.CompletedProcess(c, 0)
+    )
+
+    assert install.update() == 1, "a no-op upgrade is not a success"
+    err = capsys.readouterr().err
+    assert "still 0.3.0" in err
+    assert "0.3.1" in err, "says what it should have got"
+
+
+def test_a_real_upgrade_reads_the_new_version_off_disk(notSource, monkeypatch, capsys):
+    monkeypatch.setattr(install, "installedVersion", lambda: "0.3.0")
+    monkeypatch.setattr(install, "latestVersion", lambda *a, **k: "0.3.1")
+    monkeypatch.setattr(install, "installedOnDisk", lambda: "0.3.1")
+    monkeypatch.setattr(install, "installer", lambda: "pipx")
+    monkeypatch.setattr(
+        subprocess, "run", lambda c, env=None: subprocess.CompletedProcess(c, 0)
+    )
+    assert install.update() == 0
+    assert "updated 0.3.0 -> 0.3.1" in capsys.readouterr().out
+
+
+def test_on_disk_version_comes_from_the_metadata_directory(tmp_path, monkeypatch):
+    """Read from disk, because the imported version is the one being replaced."""
+    import sysconfig
+    lib = tmp_path / "site-packages"
+    lib.mkdir()
+    (lib / "tony_cli-0.3.1.dist-info").mkdir()
+    monkeypatch.setattr(sysconfig, "get_paths", lambda *a, **k: {"purelib": str(lib)})
+    assert install.installedOnDisk() == "0.3.1"
+
+
+def test_on_disk_version_is_none_when_there_is_no_metadata(tmp_path, monkeypatch):
+    import sysconfig
+    monkeypatch.setattr(sysconfig, "get_paths", lambda *a, **k: {"purelib": str(tmp_path)})
+    assert install.installedOnDisk() is None
