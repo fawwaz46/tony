@@ -19,18 +19,6 @@ const error = Astro.url.searchParams.get("error");
   title="tony"
   description="A CLI that explains a git diff to whoever now owns it — annotated changes, blast radius, and steppable runtime walkthroughs."
 >
-  {error === "login" && (
-    <div class="notice bad" style="margin-top:1.5rem">
-      That sign-in didn't complete. Nothing was changed, so try again.
-    </div>
-  )}
-  {error === "unconfigured" && (
-    <div class="notice bad" style="margin-top:1.5rem">
-      Sign-in isn't switched on yet. The CLI still works: run a review with
-      <code> --local</code> and it stays on your machine.
-    </div>
-  )}
-
   <section class="hero">
     <h1>Tired of reading diffs?<br />Try Tony.</h1>
     <p class="lede">
@@ -137,22 +125,59 @@ const error = Astro.url.searchParams.get("error");
     </div>
   </section>
 
-  {/* Hidden for now, kept because publishing sends real source to the site and
-      readers deserve to be told. Delete `hidden` to bring it back. */}
-  <section class="sec" hidden>
+  <section class="sec">
     <p class="cap">[ where your code goes ]</p>
-    <h2 class="big">Quick note.</h2>
+    <h2 class="big">Nowhere, mostly.</h2>
     <p class="body">
-      Reviews are published here by default, which means a review carries the diff and
-      windows of your source. It's encrypted at rest and only served to signed-in
-      readers. But tony holds the key, so that's protection against a leak, not against
-      us. Don't review a repo you couldn't share with us.
+      Reviews stay on your machine. The page is one self-contained file written into
+      <code>.tony/</code> in the repo you reviewed — it opens from disk, works offline,
+      and keeps working after you uninstall tony.
     </p>
     <p class="body">
-      Writing the explanation also sends the change to Anthropic. If you'd rather keep
-      one on your own machine, <code>--local</code> skips publishing entirely and needs
-      no account.
+      The one thing that leaves is the diff itself, which goes to Anthropic so Claude can
+      write the explanation. Nothing is uploaded here, and there is no account to make.
     </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ commands ]</p>
+    <h2 class="big">Everything it does.</h2>
+    <div class="three">
+      <div>
+        <h3>Review</h3>
+        <div class="cmd"><code><span class="p">$ </span>tony</code></div>
+        <p class="body">
+          The current repo, against its default branch. This is the whole product.
+        </p>
+        <div class="cmd"><code><span class="p">$ </span>tony main...my-branch</code></div>
+        <p class="body">A range, in git's own syntax.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony my-branch</code></div>
+        <p class="body">Short for <code>my-branch...HEAD</code>.</p>
+      </div>
+      <div>
+        <h3>Options</h3>
+        <div class="cmd"><code><span class="p">$ </span>tony --no-open</code></div>
+        <p class="body">Write the page without opening a browser.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony --stale</code></div>
+        <p class="body">
+          Review a branch that isn't checked out. Line numbers may not match, which is
+          why tony refuses by default.
+        </p>
+        <div class="cmd"><code><span class="p">$ </span>tony --replay</code></div>
+        <p class="body">Rebuild the last review's page without calling the API again.</p>
+      </div>
+      <div>
+        <h3>Housekeeping</h3>
+        <div class="cmd"><code><span class="p">$ </span>tony --help</code></div>
+        <p class="body">Every command and flag.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony update</code></div>
+        <p class="body">Upgrade, using whichever installer you used.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony uninstall</code></div>
+        <p class="body">
+          Removes tony, your key, and every saved review. It asks first.
+        </p>
+      </div>
+    </div>
   </section>
 
   <script>
