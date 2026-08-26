@@ -32,16 +32,14 @@ def test_reads_the_receipt_uv_leaves(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
     (tmp_path / "uv-receipt.toml").write_text("")
     assert install.installer() == "uv"
-    assert install.updateCommand("uv") == ["uv", "tool", "upgrade", "--refresh", "tony-cli"]
+    assert install.updateCommand("uv") == ["uv", "tool", "upgrade", "tony-cli"]
 
 
 def test_reads_the_receipt_pipx_leaves(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
     (tmp_path / "pipx_metadata.json").write_text("{}")
     assert install.installer() == "pipx"
-    assert install.updateCommand("pipx") == [
-        "pipx", "upgrade", "tony-cli", "--pip-args=--no-cache-dir",
-    ]
+    assert install.updateCommand("pipx") == ["pipx", "upgrade", "tony-cli"]
 
 
 def test_falls_back_to_pip_in_a_plain_venv(tmp_path, monkeypatch):
@@ -55,6 +53,10 @@ def test_update_resolves_from_pypi_not_an_ambient_mirror():
     env = install.indexEnv()
     assert env["PIP_INDEX_URL"] == "https://pypi.org/simple"
     assert env["UV_DEFAULT_INDEX"] == "https://pypi.org/simple"
+    # Cache-busting as environment, not flags: `uv tool upgrade --refresh` is a
+    # usage error, and it failed every uv user's update.
+    assert env["UV_NO_CACHE"] == "1"
+    assert env["PIP_NO_CACHE_DIR"] == "1"
 
 
 # --- update ----------------------------------------------------------------
@@ -70,7 +72,7 @@ def test_update_runs_the_installers_upgrade(notSource, monkeypatch, capsys):
     monkeypatch.setattr(install, "installer", lambda: "pipx")
     monkeypatch.setattr(subprocess, "run", fake)
     assert install.update() == 0
-    assert ran["command"] == ["pipx", "upgrade", "tony-cli", "--pip-args=--no-cache-dir"]
+    assert ran["command"] == ["pipx", "upgrade", "tony-cli"]
     assert ran["index"] == "https://pypi.org/simple"
 
 

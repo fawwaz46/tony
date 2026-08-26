@@ -29,10 +29,21 @@ SIMPLE_JSON = "application/vnd.pypi.simple.v1+json"
 
 
 def indexEnv():
+    """The environment an upgrade runs in: our index, and nobody's cache.
+
+    Both settings are environment variables rather than command-line flags on
+    purpose. `uv tool upgrade` has no `--refresh` — passing one is a usage
+    error that fails the upgrade outright — and which cache flags each
+    installer accepts moves between versions. These names are stable.
+    """
     env = dict(os.environ)
     env["UV_INDEX_URL"] = INDEX
     env["UV_DEFAULT_INDEX"] = INDEX
     env["PIP_INDEX_URL"] = INDEX
+    # A cache minutes stale resolves to the release before the one just made,
+    # then reports "already at latest" and exits 0.
+    env["UV_NO_CACHE"] = "1"
+    env["PIP_NO_CACHE_DIR"] = "1"
     return env
 
 
@@ -72,10 +83,10 @@ def updateCommand(kind):
     pay for a fresh lookup rather than confidently do nothing.
     """
     if kind == "uv":
-        return ["uv", "tool", "upgrade", "--refresh", PKG]
+        return ["uv", "tool", "upgrade", PKG]
     if kind == "pipx":
-        return ["pipx", "upgrade", PKG, "--pip-args=--no-cache-dir"]
-    return [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", PKG]
+        return ["pipx", "upgrade", PKG]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", PKG]
 
 
 def installedVersion():
