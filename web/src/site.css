@@ -60,8 +60,12 @@
 /* ---- a command you can copy ---- */
 .cmd { display: flex; align-items: stretch; border: 1px solid var(--rule-2);
   background: var(--s1); max-width: 46rem; }
-.cmd code { flex: 1; font-family: var(--mono); font-size: .8rem; color: var(--ink-2);
-  padding: .85rem 1rem; overflow-x: auto; white-space: nowrap; }
+/* min-width:0 or the page overflows. A flex item defaults to min-width:auto,
+   which refuses to shrink below its content — and this content is one long
+   nowrap command, so it forced the whole document wider than a phone and
+   clipped every paragraph on the page. */
+.cmd code { flex: 1; min-width: 0; font-family: var(--mono); font-size: .8rem;
+  color: var(--ink-2); padding: .85rem 1rem; overflow-x: auto; white-space: nowrap; }
 .cmd code .p { color: var(--ink-4); user-select: none; }
 .cmd button { border: 0; border-left: 1px solid var(--rule-2); background: none;
   color: var(--ink-4); font: 500 .62rem/1 var(--mono); letter-spacing: .14em;
@@ -158,3 +162,22 @@
 .notice { border-left: 1px solid var(--accent-line); background: var(--accent-bg);
   padding: .9rem 1.1rem; margin-bottom: 1.5rem; font-size: .875rem; color: var(--ink-2); }
 .notice.bad { border-color: var(--neg); background: var(--neg-bg); }
+
+
+/* ---- phones ----
+   Shell loads the review stylesheet globally, so body padding is set there for
+   a desktop reading pane; a phone needs the room back. Nothing here changes a
+   layout, only the space around it. */
+@media (max-width: 40rem) {
+  body { padding-left: 1.1rem; padding-right: 1.1rem; }
+  .hero { padding: 2.75rem 0 2.5rem; }
+  .hero .lede { font-size: 1rem; margin-bottom: 1.75rem; }
+  .sec { padding: 2.5rem 0; }
+  .cmd { max-width: 100%; }
+  .cmd code { font-size: .74rem; padding: .75rem .8rem; }
+  .cmd button { padding: 0 .8rem; }
+  .three > div { padding: 1.25rem 0 1.5rem; }
+  .demo .wrap { padding: 0 .75rem; }
+  .demo-scroll { max-height: 28rem; }
+  .foot { flex-wrap: wrap; gap: .5rem 1rem; }
+}
