@@ -3,21 +3,32 @@
 release.yml publishes whatever pyproject.toml says, so a floor above that
 version asks users for a release that does not exist yet — the install just
 fails with "no matching distribution".
+
+Read with a regex rather than tomllib: this runs on the CI matrix, which
+includes the 3.10 the project still supports, and tomllib arrived in 3.11.
 """
 
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
 
-version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
-floor = re.search(r'^MIN="([^"]+)"', (root / "install.sh").read_text(), re.M).group(1)
+
+def find(path, pattern):
+    text = (root / path).read_text()
+    match = re.search(pattern, text, re.M)
+    if not match:
+        sys.exit(f"could not find {pattern!r} in {path}")
+    return match.group(1)
 
 
-def parts(v: str) -> tuple[int, ...]:
-    return tuple(int(n) for n in v.split("."))
+version = find("pyproject.toml", r'^version\s*=\s*"([^"]+)"')
+floor = find("install.sh", r'^MIN="([^"]+)"')
+
+
+def parts(v):
+    return tuple(int(n) for n in re.findall(r"\d+", v))
 
 
 if parts(floor) > parts(version):
