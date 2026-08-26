@@ -51,9 +51,11 @@ const here = Astro.url.pathname + Astro.url.search;
               </form>
             </>
           ) : (
-            <a class="link" href={`/api/auth/start?next=${encodeURIComponent(here)}`}>
-              Sign in
-            </a>
+            /* Sign-in is hidden while publishing is off by default and the
+               domain is pending a Safe Browsing review — the link led straight
+               to a browser interstitial. The route still works for anyone who
+               is already signed in, and for /reviews. */
+            null
           )
         }
       </nav>

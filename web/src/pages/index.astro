@@ -115,18 +115,22 @@ const error = Astro.url.searchParams.get("error");
     <div class="three two">
       <div>
         <span class="n">[01]</span>
-        <h3>Sign in</h3>
+        <h3>Add a key</h3>
         <p style="margin-bottom:.75rem">
-          Once, with GitHub. Approve a code in the browser and the CLI remembers it.
+          tony reviews with Claude, so it needs an Anthropic API key. No account, no
+          sign-up — the first run tells you where to get one and where to put it.
         </p>
-        <div class="cmd"><code><span class="p">$ </span>tony login</code></div>
+        <div class="cmd">
+          <code><span class="p">$ </span>echo 'ANTHROPIC_API_KEY=sk-ant-...' &gt;&gt; ~/.tony/.env</code>
+        </div>
       </div>
       <div>
         <span class="n">[02]</span>
         <h3>Review</h3>
         <p style="margin-bottom:.75rem">
-          Run it in any repo. tony reads the diff, writes the review, and prints a link
-          you can open or send to anyone with an account.
+          Run it in any repo. tony reads the diff against your working tree, writes the
+          review, and opens it. The page is one self-contained file in <code>.tony/</code>
+          — it works offline, and nothing is uploaded.
         </p>
         <div class="cmd"><code><span class="p">$ </span>tony main...my-branch</code></div>
       </div>

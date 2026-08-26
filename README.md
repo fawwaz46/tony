@@ -41,9 +41,11 @@ tony main...my-branch        # review a branch against main
 tony                         # review the default branch...HEAD
 ```
 
-The page is written to `.tony/` inside the repo (gitignored automatically) and
-opens in your browser. It's one self-contained HTML file — fonts, styles, and
-data inlined — so it works offline and forever.
+Reviews stay on your machine. The page is written to `.tony/` inside the repo
+(gitignored automatically) and opens in your browser — one self-contained HTML
+file, fonts and styles and data inlined, so it works offline and forever.
+Nothing is uploaded; the only thing that leaves your machine is the diff tony
+sends to Anthropic to write the review.
 
 tony needs an Anthropic API key (`ANTHROPIC_API_KEY`, or `~/.tony/.env`). The
 first run tells you exactly where to get one and where to put it. tony reviews
@@ -72,25 +74,13 @@ The range is git's own `BASE...HEAD` syntax. With no range, tony diffs against
 
 | Flag | What it does |
 |---|---|
-| `--local` | Keep the review on this machine. No account needed, nothing uploaded; you get the self-contained page in `.tony/` instead of a link. |
-| `--json` | Print the raw review JSON to stdout and exit. Writes no page, uploads nothing, needs no account. |
+| `--json` | Print the raw review JSON to stdout and exit. Writes no page instead. |
 | `--no-open` | Write the page but don't open a browser. For CI, or over SSH. |
 | `--stale` | Review a revision that isn't checked out, or with a dirty tree. Code is read from disk, so line numbers may not match the diff — tony refuses by default for that reason. |
 | `--replay` | Rebuild the page from the last saved review for this range, without calling the API. Free; use it after a tony upgrade to re-render an old review. |
 | `-v`, `--verbose` | Log every tool call to stderr, so you can see which files the review actually read before it drew conclusions. |
 | `-m`, `--model` | Model to review with. Defaults to `claude-opus-5`. |
 | `--max-tokens` | Response ceiling, default `64000`. Raise it if a review comes back cut off. |
-
-### Sharing
-
-| Command | What it does |
-|---|---|
-| `tony login` | Sign in to tony-cli.com with GitHub's device flow. Once per machine. |
-| `tony logout` | Revoke this machine's token server-side, then delete it locally. |
-| `tony whoami` | Which GitHub account this machine is signed in as. |
-| `tony unpublish <id>` | Take one published review down. The id is the last part of its URL. |
-
-Publishing is the default when you're signed in. `--local` opts out per run.
 
 ### Managing tony
 
@@ -107,29 +97,6 @@ limit it to the current repo instead of searching your home directory.
 Both `tony update` and the installer resolve from PyPI explicitly, so a machine
 pointed at an internal mirror can't decide what `tony-cli` is.
 
-## Share a review
-
-```sh
-tony login                   # once — GitHub device flow
-tony main...my-branch        # publishing is the default
-tony: https://tony-cli.com/r/8f3ka92m
-```
-
-**Who can read a published review:** anyone signed in who has the link. Review
-ids are random, so the link is what grants access — treat it like a password.
-`tony unpublish <id>` removes a review at any time.
-
-**What the site can read:** everything in the review. The payload is uploaded
-over TLS and encrypted at rest under a key the server holds, so a leak of the
-stored blobs yields nothing — but we can open a review, and so can any lawful
-demand made to us. Do not publish from a repository you could not share with
-us. An earlier design encrypted on your machine and kept the key in the link's
-fragment; that was dropped deliberately when reading moved behind an account
-and a history of past reviews became part of the product, since both need the
-server to be able to open a review.
-
-Local review needs no account and never leaves the machine: `tony --local`.
-
 ## Uninstall
 
 ```sh
@@ -137,16 +104,13 @@ tony uninstall
 ```
 
 Removing the package by itself would leave the parts worth removing: your
-`ANTHROPIC_API_KEY` and site login in `~/.tony`, and a `.tony/` directory of
-past reviews inside every repository you ran tony in — those hold source code.
-`tony uninstall` revokes the site token, lists everything it found and waits
-for you to type `yes`, deletes it, then removes the package with whichever of
-uv, pipx, or pip installed it.
+`ANTHROPIC_API_KEY` in `~/.tony`, and a `.tony/` directory of past reviews
+inside every repository you ran tony in — those hold source code. `tony
+uninstall` lists everything it found, waits for you to type `yes`, deletes it,
+then removes the package with whichever of uv, pipx, or pip installed it.
 
 It searches your home directory for stray review directories; `--no-scan`
-limits it to the current repository, and `--yes` skips the prompt. Reviews you
-published to the site are separate — take those down with `tony unpublish <id>`
-before uninstalling, or they stay up.
+limits it to the current repository, and `--yes` skips the prompt.
 
 ## Development
 

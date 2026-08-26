@@ -523,10 +523,6 @@ def main(argv=None):
         epilog=(
             "commands:\n"
             "  tony <path> [BASE...HEAD]      review a diff — the default\n"
-            "  tony login                     sign in to the tony site\n"
-            "  tony logout                    revoke this machine's token\n"
-            "  tony whoami                    who this machine is signed in as\n"
-            "  tony unpublish <id>            take one published review down\n"
             "  tony update                    update to the latest release\n"
             "  tony uninstall                 delete tony, its key, and every saved review\n"
             "  tony --version                 what is installed\n"
@@ -566,10 +562,17 @@ def main(argv=None):
         "--no-open", action="store_false", dest="openPage",
         help="Write the page but do not open it in a browser.",
     )
+    # Reviews stay on this machine unless asked otherwise. Publishing used to be
+    # the default, which put a GitHub account in front of a first run: `tony`
+    # with no account printed an error and never reviewed anything. Sharing is a
+    # separate act, and it is opt-in until it can be relied on end to end.
+    parser.add_argument(
+        "--publish", action="store_true",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument(
         "--local", action="store_true",
-        help="Keep the review on this machine. Skips publishing, needs no account, "
-             "and opens the self-contained page in .tony/ instead of a link.",
+        help=argparse.SUPPRESS,  # now the default; accepted so it never breaks
     )
     parser.add_argument(
         "--payload", nargs="?", const=True, default=False, metavar="PATH",
@@ -636,17 +639,14 @@ def main(argv=None):
             print(f"tony: {problem}", file=sys.stderr)
             return 2
 
-    # Reviews publish by default, so the login is checked before the review
-    # runs — discovering it afterwards would waste an API call the user paid for.
-    # `--json` prints and exits without ever uploading, so it is as offline as
-    # `--local` and must not be gated on an account it will not use.
-    offline = args.local or args.asJson
-    if not offline and not hosted.savedToken():
+    # Checked before the review runs — discovering it afterwards would waste an
+    # API call the user already paid for.
+    publishing = args.publish and not args.asJson
+    if publishing and not hosted.savedToken():
         print(
-            "tony: you need to sign in before publishing a review.\n\n"
+            "tony: publishing needs an account.\n\n"
             "    tony login          # once, with GitHub\n\n"
-            "  Or keep this one on your machine and skip the account:\n\n"
-            f"    tony {args.path} {args.range or ''} --local".rstrip() + "\n",
+            "  Or drop --publish to keep this review on your machine.\n",
             file=sys.stderr,
         )
         return 2
@@ -745,7 +745,7 @@ def main(argv=None):
     # is the fallback when publishing fails so a paid-for review is never lost.
     target = f"file://{path}"
 
-    if not args.local:
+    if publishing:
         url, problem = hosted.publish(
             payloadJson, repo=os.path.basename(root), rangeLabel=rangeLabel,
         )
@@ -755,8 +755,7 @@ def main(argv=None):
         else:
             print(url)
             target = url
-
-    if args.local:
+    else:
         print(f"tony: {path}")
     if args.openPage:
         webbrowser.open(target)
