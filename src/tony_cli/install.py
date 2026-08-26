@@ -161,7 +161,13 @@ def update(argv=()):
     # Nothing to do is worth saying out loud. Running the installer anyway
     # prints a wall of its output and exits 0, which reads exactly like a
     # successful upgrade.
-    if latest and before and latest == before:
+    #
+    # Ordered, not equal: the index lags a release by minutes, so a machine that
+    # just installed the newest version can be ahead of what the index admits
+    # exists. Equality treated that as "an upgrade is available", ran one, and
+    # reported the no-op as a failure.
+    here, there = _release(before or ""), _release(latest or "")
+    if here and there and here >= there:
         print(f"tony: already on the latest version ({before}).")
         return 0
 

@@ -280,3 +280,21 @@ def test_on_disk_version_is_none_when_there_is_no_metadata(tmp_path, monkeypatch
     import sysconfig
     monkeypatch.setattr(sysconfig, "get_paths", lambda *a, **k: {"purelib": str(tmp_path)})
     assert install.installedOnDisk() is None
+
+
+def test_being_ahead_of_the_index_is_not_an_upgrade(notSource, monkeypatch, capsys):
+    """The index lags a release by minutes.
+
+    A machine that just installed the newest version can be ahead of what the
+    index admits exists. Comparing for equality read that as "an upgrade is
+    available", ran one, and then reported the resulting no-op as a failure —
+    which is how a freshly-installed release failed its own smoke test.
+    """
+    monkeypatch.setattr(install, "installedVersion", lambda: "0.4.0")
+    monkeypatch.setattr(install, "latestVersion", lambda *a, **k: "0.3.3")
+    called = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: called.append(a))
+
+    assert install.update() == 0
+    assert not called
+    assert "already on the latest version (0.4.0)" in capsys.readouterr().out

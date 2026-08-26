@@ -79,24 +79,25 @@ jobs:
           # install.sh looks for pipx on PATH, and pipx installs `tony` here.
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # install.sh asks for a floor, not this exact version, so a fresh upload
+      # that has not reached the index yet installs the PREVIOUS release and
+      # succeeds. Retrying only on failure never noticed. Retry until the
+      # version on disk is the one just tagged.
       - name: Install the way the website tells people to
         run: |
-          # A fresh upload takes a moment to appear on the index.
-          for attempt in 1 2 3 4 5 6; do
-            if sh install.sh; then exit 0; fi
-            echo "not installable yet, retrying ($attempt)"
+          want="${GITHUB_REF_NAME#v}"
+          for attempt in 1 2 3 4 5 6 7 8; do
+            sh install.sh || true
+            got="$(tony --version 2>/dev/null | awk '{print $2}')"
+            if [ "$got" = "$want" ]; then
+              echo "installed $got"
+              exit 0
+            fi
+            echo "index still serving ${got:-nothing}, want $want (attempt $attempt)"
             sleep 20
           done
-          echo "install.sh could not install this release" >&2
+          echo "install.sh never installed $want" >&2
           exit 1
-
-      - name: It is the version we just tagged
-        run: |
-          installed="$(tony --version | awk '{print $2}')"
-          if [ "$installed" != "${GITHUB_REF_NAME#v}" ]; then
-            echo "installed $installed, tagged ${GITHUB_REF_NAME#v}" >&2
-            exit 1
-          fi
 
       # `tony update` is the one command whose failure mode is silence: every
       # installer exits 0 for "already at latest", so a broken updater looks
