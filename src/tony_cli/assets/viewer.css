@@ -66,8 +66,13 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 /* ---- file rows: hairlines, not cards ---- */
 .file{border-bottom:1px solid var(--rule);background:var(--ground)}
 .file:first-child{border-top:1px solid var(--rule)}
-.file summary{display:flex;align-items:center;gap:.85rem;padding:.6rem .25rem;cursor:pointer;
+/* The changed-file header is a heading, not a control — the tree does the
+   opening. Blast radius still uses <details>, so the summary rules stay. */
+.file .fhead,.file summary{display:flex;align-items:center;gap:.85rem;padding:.6rem .25rem;
   font-family:var(--mono);font-size:.75rem;flex-wrap:wrap;list-style:none;color:var(--ink-3)}
+.file summary{cursor:pointer}
+.file .fhead{border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--ground);
+  z-index:1}
 .file summary::-webkit-details-marker{display:none}
 .file summary:hover{background:var(--s1)}
 .file[open] summary{border-bottom:1px solid var(--rule)}
@@ -218,3 +223,59 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 /* Hosted-page states: loading / bad key. Same quiet chrome as everything else. */
 .rstate{padding:4rem 0;font-family:var(--mono);font-size:.75rem;color:var(--ink-3)}
 .rstate .err{color:var(--neg)}
+
+/* ---- coverage gaps ----
+   The absence of an annotation, drawn as an absence: a dashed rule, no surface,
+   no accent. It must read as "nothing was said here", never as content. */
+.gap{display:flex;align-items:center;gap:.75rem;margin:.35rem 0;padding:.4rem .9rem;
+  border:1px dashed var(--rule-2);color:var(--ink-4);font:400 .7rem/1 var(--mono)}
+.gap .gl{color:var(--ink-3)}
+.gap .gt{letter-spacing:.1em;text-transform:uppercase;font-size:.62rem}
+.gb{font-size:.62rem;color:var(--neg);border:1px dashed var(--neg);padding:.2em .5em;
+  line-height:1;letter-spacing:.04em}
+.gsum{color:var(--neg)}
+.tg{flex:none;color:var(--neg);font-size:.5rem;line-height:1}
+
+/* ---- file tree ----
+   A long review is a long page; this is the index into it. Same hairline-and-
+   surface grammar as everything else — the only colour is the change marker. */
+.flayout{display:grid;grid-template-columns:minmax(0,17rem) minmax(0,1fr);gap:2rem;
+  align-items:start}
+.fmain{min-width:0}
+.tree{position:sticky;top:0;max-height:100vh;overflow-y:auto;overscroll-behavior:contain;
+  padding:1rem .25rem 2rem 0;border-right:1px solid var(--rule);min-width:0}
+.tfil{position:sticky;top:0;background:var(--ground);padding-bottom:.6rem;z-index:1}
+#treeFilter{width:100%;background:var(--s1);border:1px solid var(--rule-2);color:var(--ink);
+  font:400 .75rem/1 var(--mono);padding:.55rem .65rem;border-radius:0;
+  -webkit-appearance:none;appearance:none}
+#treeFilter::placeholder{color:var(--ink-4)}
+#treeFilter:focus{outline:none;border-color:var(--rule-3);background:var(--s2)}
+.tn,.tsub{list-style:none;margin:0;padding:0}
+.tsub{padding-left:.7rem;border-left:1px solid var(--rule);margin-left:.45rem}
+.tdh,.tfb{display:flex;align-items:center;gap:.45rem;width:100%;background:none;border:0;
+  color:var(--ink-3);font:400 .75rem/1.4 var(--mono);text-align:left;padding:.32rem .4rem;
+  cursor:pointer;min-width:0}
+.tdh:hover,.tfb:hover{background:var(--s1);color:var(--ink-2)}
+.tdh:focus-visible,.tfb:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
+.tdh{color:var(--ink-4);letter-spacing:.04em}
+.tw{flex:none;width:.6rem;color:var(--rule-3);transition:transform .12s ease}
+.tw::before{content:"\25be"}
+.tdh[aria-expanded="false"] .tw{transform:rotate(-90deg)}
+.tnm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tfb .tnm{color:var(--ink-2)}
+.ti{flex:none;width:.7rem;text-align:center;color:var(--ink-4);font-weight:500}
+.ti.added{color:var(--pos)}
+.ti.deleted{color:var(--neg)}
+.ti.renamed{color:var(--info)}
+.tct{flex:none;font-size:.65rem;color:var(--ink-4);letter-spacing:.02em}
+/* Current file: the accent means "changed" everywhere else, so selection is a
+   contrast step instead. */
+.tfb[aria-current]{background:var(--s2);color:var(--ink)}
+.tfb[aria-current] .tnm{color:var(--ink)}
+.tnone{font:400 .72rem/1 var(--mono);color:var(--ink-4);padding:.6rem .4rem;margin:0}
+
+@media (max-width:64rem){
+  .flayout{grid-template-columns:minmax(0,1fr)}
+  .tree{position:static;max-height:20rem;border-right:0;border-bottom:1px solid var(--rule);
+    padding:0 0 1rem;margin-bottom:1.25rem}
+}

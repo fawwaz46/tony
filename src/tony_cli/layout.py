@@ -92,7 +92,7 @@ def kindFor(claimed, span):
     return "changed" if span[2] else "added"
 
 
-def layout(body, items):
+def layout(body, items, gaps=True):
     """One file as ordered blocks: diff rows, with notes above the line they describe.
 
     `items` are dicts of {"k": "note"|"risk", "n": index, "data": obj}, where
@@ -103,14 +103,49 @@ def layout(body, items):
     """
     runs = changedRuns(body) if body else []
 
-    pending = {}
+    # Where a note lands.
+    #
+    # A note that is the only thing said about a run describes that whole run,
+    # so it belongs at the run's first line — the model naming a line partway in
+    # splits the very block it is explaining.
+    #
+    # A run with SEVERAL notes is the opposite case: an added file is one
+    # contiguous run from line 1 to its end, and the three notes inside it are
+    # describing three different parts. Snapping those together would stack them
+    # at the top and throw away the only positional information there is. So
+    # only a sole note moves.
+    resolved = []
+    perRun = {}
     for item in items:
         line = item["data"].get("line")
-        anchor = int(line) if isinstance(line, (int, float)) else 0
-        pending.setdefault(anchor, []).append(item)
+        claimed = int(line) if isinstance(line, (int, float)) else 0
+        span = spanFor(claimed, runs) if runs else None
+        resolved.append((item, span, claimed))
+        if span in runs:
+            perRun[span] = perRun.get(span, 0) + 1
 
-    def note(anchor, item):
-        span = spanFor(anchor, runs) if runs else None
+    pending = {}
+    covered = set()
+    for item, span, claimed in resolved:
+        if span in runs:
+            covered.add(span)
+        alone = span in runs and perRun[span] == 1
+        pending.setdefault(span[0] if alone else claimed, []).append(("note", item, span))
+
+    # A run nothing explained. The promise is that every changed block is
+    # accounted for, and a review that quietly covers two thirds of a diff is
+    # indistinguishable from one that covers all of it — which is the failure
+    # worth making impossible to miss. The gap is placed like any other note,
+    # at the first line of the run it marks.
+    if gaps:
+        for run in runs:
+            if run not in covered:
+                pending.setdefault(run[0], []).append(("gap", None, run))
+
+    def block(entry):
+        kind, item, span = entry
+        if kind == "gap":
+            return {"k": "gap", "span": list(span), "tag": kindFor(None, span)}
         return {
             "k": item["k"],
             "n": item["n"],
@@ -127,12 +162,12 @@ def layout(body, items):
             newLine = int(header.group(1))
             # anything anchored before this hunk that never matched, flush here
             for anchor in sorted(k for k in pending if k < newLine):
-                blocks += [note(anchor, i) for i in pending.pop(anchor)]
+                blocks += [block(e) for e in pending.pop(anchor)]
             blocks.append({"k": "row", "cls": "h", "g": None, "text": line})
             continue
 
         if newLine is not None and newLine in pending:
-            blocks += [note(newLine, i) for i in pending.pop(newLine)]
+            blocks += [block(e) for e in pending.pop(newLine)]
 
         if line.startswith("+"):
             cls, gutter = "a", newLine
@@ -147,9 +182,44 @@ def layout(body, items):
         blocks.append({"k": "row", "cls": cls, "g": gutter, "text": line})
 
     for anchor in sorted(pending):
-        blocks += [note(anchor, i) for i in pending.pop(anchor)]
+        blocks += [block(e) for e in pending.pop(anchor)]
 
     return blocks
+
+
+# Files nobody reads and nobody should be asked to explain. Decided here, from
+# the path alone, rather than left to the model — "skip lockfiles" as a prompt
+# instruction is a judgment call, and a judgment call is what put 4000 lines of
+# package-lock.json into a coverage denominator.
+SKIP_NAMES = {
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json",
+    "Cargo.lock", "poetry.lock", "Pipfile.lock", "composer.lock", "Gemfile.lock",
+    "go.sum", "flake.lock",
+}
+SKIP_SUFFIXES = (".min.js", ".min.css", ".map", ".snap", ".lock")
+
+
+def isSkippable(path):
+    """True for generated files that are not worth an annotation."""
+    name = (path or "").rsplit("/", 1)[-1]
+    return name in SKIP_NAMES or name.endswith(SKIP_SUFFIXES)
+
+
+def runCoverage(body, items):
+    """(total runs, unexplained runs) for one file.
+
+    The same resolution `layout` does, without building a page — this is what
+    lets the review loop check its own work before anyone reads it.
+    """
+    runs = changedRuns(body) if body else []
+    covered = set()
+    for item in items:
+        line = item["data"].get("line")
+        claimed = int(line) if isinstance(line, (int, float)) else 0
+        span = spanFor(claimed, runs) if runs else None
+        if span in runs:
+            covered.add(span)
+    return runs, [r for r in runs if r not in covered]
 
 
 def itemsByPath(annotations, risks):

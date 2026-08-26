@@ -15,7 +15,8 @@
 export type Span = [start: number, end: number, hadDeletion: boolean];
 export type Row = { k: "row"; cls: "a" | "d" | "c" | "h"; g: number | null; text: string };
 export type NoteRef = { k: "note" | "risk"; n: number; span: Span | null; tag: string };
-export type Block = Row | NoteRef;
+export type Gap = { k: "gap"; span: Span; tag: string };
+export type Block = Row | NoteRef | Gap;
 
 export type Window = {
   start: number;
@@ -35,6 +36,7 @@ export interface Payload {
   annotations: any[];
   risks: any[];
   impacts: any[];
+  coverage?: { changedLines: number; unexplainedLines: number };
   impactWindows: Record<string, Window>;
   walkthroughs: any[];
 }
@@ -94,6 +96,10 @@ const PANES = [
 
 let seq = 0;
 
+function renderGap(span: Span): string {
+  return `<div class="gap"><span class="gl">${lineLabel(span)}</span><span class="gt">not explained</span></div>`;
+}
+
 function renderNote(item: any, kind: "note" | "risk", span: Span | null, tag: string): string {
   if (kind === "risk") {
     return `<div class="ann risk"><p class="t">Potential risk${lineLabel(span)}</p><p class="n">${esc(item.text)}</p></div>`;
@@ -133,7 +139,8 @@ function renderFiles(files: any[], annotations: any[], risks: any[]): string {
     .map((f, idx) => {
       const i = idx + 1;
       const blocks: Block[] = f.blocks ?? [];
-      const noteCount = blocks.filter((b) => b.k !== "row").length;
+      const noteCount = blocks.filter((b) => b.k === "note" || b.k === "risk").length;
+      const gapCount = blocks.filter((b) => b.k === "gap").length;
       // A note index out of range would otherwise render "undefined".
       const safeNote = (i: number, source: any[]) => source[i] ?? {};
       let inner: string;
@@ -146,6 +153,8 @@ function renderFiles(files: any[], annotations: any[], risks: any[]): string {
           .map((b) =>
             b.k === "row"
               ? `<div class="l ${cls(b.cls)}"><span class="g">${b.g == null ? "" : num(b.g)}</span>${esc(b.text) || "&nbsp;"}</div>`
+              : b.k === "gap"
+              ? renderGap(b.span)
               : renderNote(
                   safeNote(num(b.n), b.k === "risk" ? risks : annotations),
                   b.k === "risk" ? "risk" : "note",
@@ -156,22 +165,146 @@ function renderFiles(files: any[], annotations: any[], risks: any[]): string {
           .join("");
         inner = `<div class="hunk">${rows}</div>`;
       }
-      const open = !f.binary && noteCount > 0 ? " open" : "";
       const renamed = f.oldPath ? `<span class="from">from ${esc(f.oldPath)}</span>` : "";
       const badge = noteCount > 0 ? `<span class="nb">${noteCount}</span>` : "";
+      const gapBadge = num(f.unexplainedLines) > 0
+        ? `<span class="gb">${num(f.unexplainedLines)} lines unexplained</span>` : "";
+      // One file is on screen at a time, so this is a section that is shown or
+      // hidden — not a <details> to expand. A disclosure triangle here would
+      // promise a collapse that the tree already does better, and forty stacked
+      // summaries is the scrolling this replaced.
       return `
-<details class="file" id="file-${fileId(f.path)}"${open}>
-  <summary>
+<section class="file" id="file-${fileId(f.path)}"${idx === 0 ? "" : " hidden"}>
+  <div class="fhead">
     <span class="ix">[${pad2(i)}]</span>
     <span class="st ${esc(f.status)}">${esc(String(f.status).slice(0, 3))}</span>
     <span class="fp">${esc(f.path)}</span>${renamed}
-    ${badge}
+    ${badge}${gapBadge}
     <span class="cnt"><b class="${num(f.additions) ? "pos" : "z"}">+${num(f.additions)}</b> <b class="${num(f.deletions) ? "neg" : "z"}">&minus;${num(f.deletions)}</b></span>
-  </summary>
+  </div>
   ${inner}
-</details>`;
+</section>`;
     })
     .join("");
+}
+
+// ---- file tree ------------------------------------------------------------
+
+/* A long review is a very long page. The tree is how you find one file in it
+   without scrolling past forty others: only what the diff touched, folders
+   nested, click to jump. Nothing here is a second source of truth — every row
+   points at a <details> that renderFiles already wrote. */
+
+type TreeNode = {
+  name: string;
+  dir: boolean;
+  children: TreeNode[];
+  file?: any;
+  index?: number;
+};
+
+const STATUS_MARK: Record<string, string> = {
+  added: "+",
+  deleted: "\u2212",
+  renamed: "\u2192",
+};
+
+export function buildTree(files: any[]): TreeNode[] {
+  const root: TreeNode = { name: "", dir: true, children: [] };
+
+  files.forEach((f, idx) => {
+    // A path is untrusted text: "" and "a//b" both produce empty segments that
+    // would otherwise become nameless folders.
+    const parts = String(f?.path ?? "").split("/").filter(Boolean);
+    if (parts.length === 0) return;
+    let at = root;
+    parts.slice(0, -1).forEach((segment) => {
+      let next = at.children.find((c) => c.dir && c.name === segment);
+      if (!next) {
+        next = { name: segment, dir: true, children: [] };
+        at.children.push(next);
+      }
+      at = next;
+    });
+    at.children.push({
+      name: parts[parts.length - 1],
+      dir: false,
+      children: [],
+      file: f,
+      index: idx + 1,
+    });
+  });
+
+  // A folder that only ever contains one folder is a corridor, not a choice.
+  // Collapsing the chain into "src/renderer" is what keeps a deep monorepo
+  // path from costing five rows of indentation to walk.
+  const collapse = (node: TreeNode): TreeNode => {
+    node.children = node.children.map(collapse);
+    while (node.dir && node.children.length === 1 && node.children[0].dir) {
+      const only = node.children[0];
+      node.name = `${node.name}/${only.name}`;
+      node.children = only.children;
+    }
+    return node;
+  };
+
+  const sort = (nodes: TreeNode[]): TreeNode[] => {
+    nodes.forEach((n) => sort(n.children));
+    // Folders first, then files: the shape people expect from a file browser,
+    // and it keeps the corridors at the top where they read as structure.
+    nodes.sort((a, b) =>
+      a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1,
+    );
+    return nodes;
+  };
+
+  // The root is not a row, so it is never collapsed into — doing so would fold
+  // a whole top-level folder away and leave its files looking unparented.
+  return sort(root.children.map(collapse));
+}
+
+function renderTreeNodes(nodes: TreeNode[]): string {
+  return nodes
+    .map((node) => {
+      if (node.dir) {
+        return `
+<li class="td">
+  <button class="tdh" type="button" aria-expanded="true">
+    <span class="tw" aria-hidden="true"></span><span class="tnm">${esc(node.name)}</span>
+  </button>
+  <ul class="tsub">${renderTreeNodes(node.children)}</ul>
+</li>`;
+      }
+      const f = node.file ?? {};
+      const status = String(f.status ?? "");
+      const mark = STATUS_MARK[status] ?? "\u00b1";
+      // The full path drives filtering, so typing "src/renderer" finds a file
+      // whose own name never contains it.
+      const search = esc(String(f.path ?? "").toLowerCase());
+      return `
+<li class="tfl" data-search="${search}">
+  <button class="tfb" type="button" data-target="file-${fileId(String(f.path ?? ""))}"${node.index === 1 ? " aria-current" : ""}>
+    <span class="ti ${cls(status)}" aria-hidden="true">${mark}</span>
+    <span class="tnm">${esc(node.name)}</span>
+    ${num(f.unexplainedLines) ? `<span class="tg" title="${num(f.unexplainedLines)} lines unexplained">\u25cf</span>` : ""}
+    <span class="tct"><b class="${num(f.additions) ? "pos" : "z"}">+${num(f.additions)}</b> <b class="${num(f.deletions) ? "neg" : "z"}">&minus;${num(f.deletions)}</b></span>
+  </button>
+</li>`;
+    })
+    .join("");
+}
+
+function renderTree(files: any[]): string {
+  const nodes = buildTree(files);
+  if (nodes.length === 0) return "";
+  return `
+<aside class="tree" aria-label="Changed files">
+  <div class="tfil">
+    <input type="search" id="treeFilter" placeholder="Filter files\u2026" aria-label="Filter files" autocomplete="off">
+  </div>
+  <ul class="tn">${renderTreeNodes(nodes)}</ul>
+  <p class="tnone" hidden>No files match.</p>
+</aside>`;
 }
 
 // ---- blast radius ---------------------------------------------------------
@@ -384,6 +517,10 @@ export function renderReview(root: HTMLElement, review: Payload): void {
   const adds = files.reduce((n: number, f: any) => n + num(f.additions), 0);
   const dels = files.reduce((n: number, f: any) => n + num(f.deletions), 0);
   const loose = risks.filter((r: any) => !r.path);
+  // Surfaced next to the counts rather than buried: a review with holes in it
+  // must not look like a complete one.
+  const gaps = num(review.coverage?.unexplainedLines);
+  const gapPct = Math.round((100 * gaps) / Math.max(num(review.coverage?.changedLines), 1));
 
   const looseHtml = loose.length
     ? `<section class="loose"><h2>Risks outside the diff</h2><ul>${loose
@@ -405,6 +542,7 @@ export function renderReview(root: HTMLElement, review: Payload): void {
     <span><b class="pos">+${adds}</b> <b class="neg">&minus;${dels}</b></span>
     <span>${annotations.length} annotations</span>
     <label class="toggle"><input type="checkbox" id="riskToggle"> potential risks (${risks.length})</label>
+    ${gaps > 0 ? `<span class="gsum">${gaps} of ${num(review.coverage?.changedLines)} changed lines unexplained (${gapPct}%)</span>` : ""}
   </div>
 </header>
 ${looseHtml}
@@ -413,7 +551,12 @@ ${looseHtml}
   <button class="mt" data-t="blast" aria-selected="false"${reached ? "" : " disabled"}>Blast radius <span class="c">${reached}</span></button>
   <button class="mt" data-t="walk" aria-selected="false"${walkthroughs.length ? "" : " disabled"}>How it works <span class="c">${walkthroughs.length}</span></button>
 </nav>
-<div id="pane-files">${renderFiles(files, annotations, risks)}</div>
+<div id="pane-files">
+  <div class="flayout">
+    ${renderTree(files)}
+    <div class="fmain">${renderFiles(files, annotations, risks)}</div>
+  </div>
+</div>
 <div id="pane-blast" hidden>
   <div class="stepper" id="stepper">
     <button id="prevImp" aria-label="Previous impact">&#8249;</button>
@@ -446,6 +589,96 @@ function wire(root: HTMLElement): void {
       byId("pane-walk").hidden = t !== "walk";
     }),
   );
+
+  // ---- file tree ----------------------------------------------------------
+
+  const tree = root.querySelector<HTMLElement>(".tree");
+  if (tree) {
+    const rows = Array.from(tree.querySelectorAll<HTMLElement>(".tfb"));
+    const sections = Array.from(root.querySelectorAll<HTMLElement>("#pane-files .file"));
+
+    // The tree is sorted alphabetically; the file shown first is the diff's
+    // first. Those two orders disagree constantly, so the starting position
+    // comes from the row actually marked current, not from an assumed zero.
+    let current = Math.max(0, rows.findIndex((r) => r.hasAttribute("aria-current")));
+
+    // One file on screen at a time. A forty-file diff is thousands of lines of
+    // page, and the tree is only navigation if the thing it navigates to is
+    // the thing you end up looking at.
+    const showFile = (index: number) => {
+      const button = rows[index];
+      if (!button) return;
+      const wanted = button.dataset.target;
+      sections.forEach((section) => {
+        section.hidden = section.id !== wanted;
+      });
+      rows.forEach((r, i) => r.toggleAttribute("aria-current", i === index));
+      current = index;
+      // The previous file may have been scrolled deep; the next one must start
+      // at its own top rather than halfway down.
+      root.querySelector("#pane-files")?.scrollIntoView?.({ block: "start" });
+    };
+
+    rows.forEach((button, index) => {
+      button.addEventListener("click", () => showFile(index));
+    });
+
+    // Same bracket keys the blast-radius stepper uses, so stepping through a
+    // review is one idiom rather than two.
+    document.addEventListener("keydown", (e) => {
+      if (byId("pane-files").hidden) return;
+      const target = e.target as HTMLElement | null;
+      if (target && target.tagName === "INPUT") return;  // typing in the filter
+      if (e.key === "]") showFile(Math.min(rows.length - 1, current + 1));
+      if (e.key === "[") showFile(Math.max(0, current - 1));
+    });
+
+    // Folders collapse. The chevron is CSS on aria-expanded, so the attribute
+    // is the state — there is no second flag to drift from it.
+    tree.querySelectorAll<HTMLElement>(".tdh").forEach((head) => {
+      head.addEventListener("click", () => {
+        const open = head.getAttribute("aria-expanded") === "true";
+        head.setAttribute("aria-expanded", String(!open));
+        const sub = head.nextElementSibling as HTMLElement | null;
+        if (sub) sub.hidden = open;
+      });
+    });
+
+    const filter = tree.querySelector<HTMLInputElement>("#treeFilter");
+    const empty = tree.querySelector<HTMLElement>(".tnone");
+    filter?.addEventListener("input", () => {
+      const q = filter.value.trim().toLowerCase();
+      let hits = 0;
+
+      tree.querySelectorAll<HTMLElement>(".tfl").forEach((li) => {
+        const match = !q || (li.dataset.search ?? "").includes(q);
+        li.hidden = !match;
+        if (match) hits++;
+      });
+
+      // A folder with nothing visible under it is noise; one with a hit must be
+      // open, or the match it is hiding may as well not have been found.
+      tree.querySelectorAll<HTMLElement>(".td").forEach((dir) => {
+        const visible = dir.querySelector(".tfl:not([hidden])") !== null;
+        dir.hidden = !visible;
+        if (q && visible) {
+          dir.querySelector(".tdh")?.setAttribute("aria-expanded", "true");
+          const sub = dir.querySelector<HTMLElement>(".tsub");
+          if (sub) sub.hidden = false;
+        }
+      });
+
+      if (empty) empty.hidden = hits > 0;
+
+      // Filtering is navigation too: if the file on screen is no longer in the
+      // list, show the first one that is, rather than leaving the reader
+      // looking at a file the tree no longer offers.
+      if (hits > 0 && rows[current]?.parentElement?.hidden) {
+        const first = rows.findIndex((r) => !r.parentElement?.hidden);
+        if (first >= 0) showFile(first);
+      }
+    });
+  }
 
   // Walkthrough player: one step at a time.
   root.querySelectorAll<HTMLElement>(".wt").forEach((wt) => {

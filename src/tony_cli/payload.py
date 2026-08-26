@@ -14,7 +14,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from tony_cli.layout import itemsByPath, layout, parseReview
+from tony_cli.layout import isSkippable, itemsByPath, layout, parseReview, runCoverage
 from tony_cli.source.local import confine, splitDiffByFile
 
 VERSION = 1
@@ -136,14 +136,22 @@ def laidOutFiles(diff, annotations, risks):
     byPath = itemsByPath(annotations, risks)
     out = []
     for f in splitDiffByFile(diff):
+        skip = f["binary"] or isSkippable(f["path"])
+        runs, missed = ([], []) if skip else runCoverage(f["body"], byPath.get(f["path"], []))
+        # Lines, not runs. A run is whatever the diff made contiguous — an added
+        # file is one run of 500 lines — so counting runs says nothing about how
+        # much code went unexplained.
         out.append({
+            "changedLines": sum(r[1] - r[0] + 1 for r in runs),
+            "unexplainedLines": sum(r[1] - r[0] + 1 for r in missed),
+            "unexplained": len(missed),
             "path": f["path"],
             "oldPath": f["oldPath"],
             "status": f["status"],
             "binary": f["binary"],
             "additions": f["additions"],
             "deletions": f["deletions"],
-            "blocks": layout(f["body"], byPath.get(f["path"], [])) if f["body"] else [],
+            "blocks": layout(f["body"], byPath.get(f["path"], []), gaps=not skip) if f["body"] else [],
         })
     return out
 
@@ -154,6 +162,7 @@ def buildPayload(review, diff, repoPath, rangeLabel=""):
     impacts = data.get("impacts") or []
     annotations = data.get("annotations") or []
     risks = data.get("risks") or []
+    files = laidOutFiles(diff, annotations, risks)
 
     return {
         "v": VERSION,
@@ -161,7 +170,11 @@ def buildPayload(review, diff, repoPath, rangeLabel=""):
         "range": rangeLabel,
         "createdAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "intent": data.get("intent") or "",
-        "files": laidOutFiles(diff, annotations, risks),
+        "files": files,
+        "coverage": {
+            "changedLines": sum(f["changedLines"] for f in files),
+            "unexplainedLines": sum(f["unexplainedLines"] for f in files),
+        },
         "annotations": annotations,
         "risks": risks,
         "impacts": impacts,

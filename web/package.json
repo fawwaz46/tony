@@ -9,7 +9,7 @@
     "build:viewer": "esbuild src/renderer/local.ts --bundle --minify --format=iife --outfile=../src/tony_cli/assets/viewer.js && cp src/styles.css ../src/tony_cli/assets/viewer.css",
     "sync:install": "cp ../install.sh public/install.sh 2>/dev/null || true",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run typecheck && node test/render.xss.mjs && node test/origin.csrf.mjs && node test/compress.mjs"
+    "test": "npm run typecheck && node test/render.xss.mjs && node test/origin.csrf.mjs && node test/compress.mjs && node test/tree.mjs"
   },
   "dependencies": {
     "@astrojs/vercel": "^8.0.0",
