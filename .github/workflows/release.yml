@@ -68,6 +68,11 @@ jobs:
   smoke:
     needs: publish
     runs-on: ubuntu-latest
+    # pip caches the index page it resolved from, so every retry in the loop
+    # below re-read the same stale answer instead of asking again. Without this
+    # the retries are just eight identical installs of the previous release.
+    env:
+      PIP_NO_CACHE_DIR: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -86,7 +91,7 @@ jobs:
       - name: Install the way the website tells people to
         run: |
           want="${GITHUB_REF_NAME#v}"
-          for attempt in 1 2 3 4 5 6 7 8; do
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
             sh install.sh || true
             got="$(tony --version 2>/dev/null | awk '{print $2}')"
             if [ "$got" = "$want" ]; then
