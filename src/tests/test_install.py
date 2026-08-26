@@ -182,6 +182,40 @@ def test_an_unreachable_index_still_updates(notSource, monkeypatch, capsys):
     assert "updated" not in capsys.readouterr().out
 
 
+def test_latest_version_reads_the_index_installers_resolve_from(monkeypatch):
+    """Not pypi.org/pypi/<name>/json — that lags a release by minutes.
+
+    It reported 0.3.0 as latest while an install was already resolving 0.3.1,
+    which is exactly how `tony update` tells someone they are current when they
+    are two releases behind.
+    """
+    asked = {}
+
+    class Page:
+        status_code = 200
+        def json(self):
+            return {"versions": ["0.3.0", "0.3.10", "0.3.2", "1.0.0rc1"]}
+
+    def get(url, **kw):
+        asked["url"] = url
+        asked["accept"] = kw.get("headers", {}).get("Accept")
+        return Page()
+
+    monkeypatch.setattr(install.httpx, "get", get)
+    # 0.3.10 beats 0.3.2 numerically, and a release candidate wins nothing.
+    assert install.latestVersion() == "0.3.10"
+    assert asked["url"].endswith("/simple/tony-cli/")
+    assert "simple" in asked["accept"]
+
+
+def test_latest_version_ignores_a_versionless_index(monkeypatch):
+    class Page:
+        status_code = 200
+        def json(self): return {"files": []}
+    monkeypatch.setattr(install.httpx, "get", lambda *a, **k: Page())
+    assert install.latestVersion() is None
+
+
 def test_latest_version_survives_a_broken_index(monkeypatch):
     """A 500, an HTML error page, a timeout — none may raise into the CLI."""
     class Boom:

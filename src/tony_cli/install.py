@@ -7,6 +7,7 @@ the root of the environment tony is actually running from.
 """
 
 import os
+import re
 import subprocess
 import sys
 
@@ -18,7 +19,13 @@ PKG = "tony-cli"
 # an ambient index setting, so on a machine pointed at an internal mirror an
 # update would pull whatever that mirror serves under the name `tony-cli`.
 INDEX = "https://pypi.org/simple"
-RELEASES = "https://pypi.org/pypi/tony-cli/json"
+
+# The project's page on that same index, asked for as JSON (PEP 691). Not
+# pypi.org/pypi/<name>/json — that one is CDN-cached and runs minutes behind a
+# release, so it will call a version "latest" that an installer has already
+# moved past, and report "already on the latest version" to someone who is not.
+PROJECT = f"{INDEX}/{PKG}/"
+SIMPLE_JSON = "application/vnd.pypi.simple.v1+json"
 
 
 def indexEnv():
@@ -101,20 +108,38 @@ def installedOnDisk():
     return name[len("tony_cli-"):-len(".dist-info")] or None
 
 
+def _release(version):
+    """A sortable key for a plain release, or None for anything else.
+
+    Pre-releases and dev builds sort unpredictably as digit tuples — "1.0.0rc1"
+    would read as (1, 0, 0, 1) and outrank 1.0.0 — and `tony update` should not
+    move anyone onto one.
+    """
+    if not re.fullmatch(r"\d+(?:\.\d+)*", version or ""):
+        return None
+    return tuple(int(n) for n in version.split("."))
+
+
 def latestVersion(timeout=10):
-    """The newest version PyPI serves, or None if it cannot be asked.
+    """The newest release the index offers, or None if it cannot be asked.
 
     Worth one request: without it there is nothing to check the upgrade
     against, and every installer exits 0 for "already at latest" — which is
     indistinguishable from "upgraded" unless you knew the target beforehand.
     """
     try:
-        response = httpx.get(RELEASES, timeout=timeout)
+        response = httpx.get(
+            PROJECT, timeout=timeout, headers={"Accept": SIMPLE_JSON},
+            follow_redirects=True,
+        )
         if response.status_code != 200:
             return None
-        return ((response.json() or {}).get("info") or {}).get("version")
+        versions = (response.json() or {}).get("versions") or []
     except Exception:
         return None
+
+    ranked = [(key, v) for v in versions if (key := _release(v))]
+    return max(ranked)[1] if ranked else None
 
 
 def update(argv=()):
