@@ -14,7 +14,10 @@ A self-contained hunk needs none of that. A renamed variable, an added guard cla
 
 Decide which files you need first, then read them in ONE batch rather than one file per step.
 
-Do the same with search. Collect every changed symbol whose shape other code could depend on, then grep for them together — one pass, not one pass per symbol. That search is where the blast radius comes from, and it is the part of the review a diff cannot give you.
+That test is about ANNOTATIONS only. Two parts of the review cannot be written from the diff at all, and you must read for them:
+
+- IMPACTS. The files that consume a changed symbol are by definition not in the diff. Collect every changed symbol whose shape other code could depend on, grep for them together in one pass rather than one pass per symbol, and read each consuming site you are going to report.
+- WALKTHROUGHS. A trace runs through code that was never changed, and every step carries a real file and line range that the reader is shown. Read what you trace. A step you did not read is a step you invented.
 
 You are spending a context window, not an API budget. A review that runs out of room part-way explains nothing well.
 
