@@ -18,7 +18,15 @@ file and search tools than tony ever shipped.
 import os
 import secrets
 
-from mcp.server.fastmcp import FastMCP
+# The SDK renamed FastMCP to MCPServer in 2.0. The class is the same shape —
+# same constructor, same `.tool` decorator, same `.run(transport=...)` — so
+# both are accepted rather than pinning tony to a superseded major. A
+# dependency floor of `mcp>=1.9` resolves to 2.x on a fresh install and to
+# whatever is already there on an upgrade, and both have to work.
+try:
+    from mcp.server.mcpserver import MCPServer as Server
+except ImportError:  # mcp < 2
+    from mcp.server.fastmcp import FastMCP as Server
 
 from tony_cli import hosted
 from tony_cli.page import renderPage
@@ -300,7 +308,7 @@ Call it once, when the whole review is written. It is not incremental."""
 
 
 def buildServer():
-    server = FastMCP("tony")
+    server = Server("tony")
 
     @server.tool(name="tony_start", description=START_DESCRIPTION)
     def tony_start(path: str = "", range: str = "") -> str:
