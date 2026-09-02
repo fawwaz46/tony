@@ -169,3 +169,49 @@ def test_publish_builds_a_payload_that_kept_the_review(tmp_path, monkeypatch):
     assert len(published["annotations"]) == 1
     assert published["coverage"]["unexplainedLines"] == 0
     assert published["instructions"] == "v1"
+
+
+# --- connecting to a harness -----------------------------------------------
+
+def test_connect_merges_into_an_existing_config(tmp_path, monkeypatch):
+    """These files hold the user's other servers; a rewrite that dropped them
+    would be a worse bug than failing to connect."""
+    from tony_cli import mcp_config
+
+    config = tmp_path / ".claude.json"
+    config.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}, "theme": "dark"}))
+    state, _ = mcp_config.connectJson(str(config), ["mcpServers"], "/bin/tony")
+
+    body = json.loads(config.read_text())
+    assert state == "wrote"
+    assert body["theme"] == "dark"
+    assert body["mcpServers"]["other"] == {"command": "x"}
+    assert body["mcpServers"]["tony"] == {"command": "/bin/tony", "args": ["mcp"]}
+
+    # Running it twice must not append a second entry or rewrite the first.
+    assert mcp_config.connectJson(str(config), ["mcpServers"], "/bin/tony")[0] == "already"
+
+
+def test_connect_keeps_codex_comments(tmp_path, monkeypatch):
+    """Codex's config is hand-edited TOML. Parsing and re-emitting would work,
+    and would silently strip every comment in it."""
+    from tony_cli import mcp_config
+
+    config = tmp_path / "config.toml"
+    config.write_text('# my notes\nmodel = "gpt-5"\n')
+    monkeypatch.setattr(mcp_config, "CODEX", str(config))
+
+    assert mcp_config.connectCodex("/bin/tony")[0] == "wrote"
+    text = config.read_text()
+    assert "# my notes" in text and 'model = "gpt-5"' in text
+    assert text.count("[mcp_servers.tony]") == 1
+
+    assert mcp_config.connectCodex("/bin/tony")[0] == "already"
+    assert config.read_text().count("[mcp_servers.tony]") == 1
+
+
+def test_install_points_at_connect():
+    """`tony install` is the obvious wrong guess — tony is already installed."""
+    from tony_cli.agent import main
+
+    assert main(["install"]) == 2

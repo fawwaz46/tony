@@ -516,9 +516,15 @@ def main(argv=None):
     if argv[:1] == ["mcp"]:
         from tony_cli.mcp_server import serve
         return serve(argv[1:])
-    if argv[:1] == ["install"]:
+    if argv[:1] == ["connect"]:
         from tony_cli import mcp_config
-        return mcp_config.install(argv[1:])
+        return mcp_config.connect(argv[1:])
+    # The obvious wrong guess, and one worth answering rather than parsing as a
+    # repository path called "install".
+    if argv[:1] == ["install"]:
+        print("tony: tony is already installed — you want `tony connect`, which\n"
+              "      registers it with your coding agent.", file=sys.stderr)
+        return 2
     if argv[:1] == ["update"]:
         return install.update(argv[1:])
     if argv[:1] == ["uninstall"]:
@@ -531,7 +537,7 @@ def main(argv=None):
         epilog=(
             "commands:\n"
             "  tony <path> [BASE...HEAD]      review a diff — the default\n"
-            "  tony install [host ...]        register the MCP server with your agent\n"
+            "  tony connect [host ...]        connect tony to your coding agent\n"
             "  tony mcp                       run the MCP server on stdio\n"
             "  tony update                    update to the latest release\n"
             "  tony uninstall                 delete tony, its key, and every saved review\n"

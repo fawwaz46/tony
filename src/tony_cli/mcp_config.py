@@ -1,5 +1,9 @@
 """Registering `tony mcp` with the agent harnesses that can run it.
 
+Deliberately not called `install`: installing tony is what the curl script and
+`uv tool install` do, and `tony uninstall` already means removing the package.
+A `tony install` that did something unrelated to `tony uninstall` was a trap.
+
 One binary, one server, and a different config file per host — each with its own
 path, its own format, and its own name for the same idea. This module knows
 those four shapes and nothing else.
@@ -65,7 +69,7 @@ def writeJson(path, body):
         fh.write("\n")
 
 
-def installJson(path, keys, exe):
+def connectJson(path, keys, exe):
     """Add tony to one JSON host's server map. Returns (state, detail).
 
     `keys` is the path to the map — a single key for every host so far, but
@@ -91,10 +95,10 @@ def installJson(path, keys, exe):
     return "wrote", f"connected  ({path})"
 
 
-def installCodex(exe):
+def connectCodex(exe):
     """Add tony to Codex's TOML config, appending rather than reformatting.
 
-    Returns (state, detail), like `installJson`.
+    Returns (state, detail), like `connectJson`.
 
     Codex's file is hand-edited TOML with comments in it. Parsing and re-emitting
     would work and would also silently strip every one of those comments, so the
@@ -119,8 +123,8 @@ def installCodex(exe):
     return "wrote", f"connected  ({CODEX})"
 
 
-def install(argv=None):
-    """`tony install [host ...]` — register the MCP server, then say what is next.
+def connect(argv=None):
+    """`tony connect [host ...]` — register the MCP server, then say what is next.
 
     This is the whole of setup for most people, so it does not stop at writing
     files. Someone who has just run it does not know that an agent reads its
@@ -146,10 +150,10 @@ def install(argv=None):
     for host in targets:
         try:
             if host == "codex":
-                result = installCodex(exe)
+                result = connectCodex(exe)
             else:
                 path, keys = JSON_HOSTS[host]
-                result = installJson(path, keys, exe)
+                result = connectJson(path, keys, exe)
         except OSError as e:
             result = ("failed", str(e))
         results.append((host, result))

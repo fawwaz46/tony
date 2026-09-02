@@ -47,7 +47,7 @@ import Shell from "../layouts/Shell.astro";
             this list when it starts.
           </p>
           <div class="cmd">
-            <code><span class="p">$</span> tony install</code>
+            <code><span class="p">$</span> tony connect</code>
           </div>
         </div>
       </div>
@@ -123,7 +123,7 @@ import Shell from "../layouts/Shell.astro";
     <p class="cap">Housekeeping</p>
     <h2 class="big">The rest of the commands.</h2>
     <dl class="cmds">
-      <dt>tony install [claude|cursor|amp|codex]</dt>
+      <dt>tony connect [claude|cursor|amp|codex]</dt>
       <dd>Register with one agent instead of all of them.</dd>
       <dt>tony whoami</dt>
       <dd>Which account this machine is signed in as.</dd>
@@ -142,11 +142,11 @@ import Shell from "../layouts/Shell.astro";
     <p class="cap">Trouble</p>
     <h2 class="big">If the agent says it has never heard of tony.</h2>
     <p class="body">
-      It has not restarted since <code>tony install</code> ran. An agent reads
+      It has not restarted since <code>tony connect</code> ran. An agent reads
       its list of tools once, at startup. Quit it fully and open it again.
     </p>
     <p class="body">
-      If it still cannot see tony, run <code>tony install</code> again and check
+      If it still cannot see tony, run <code>tony connect</code> again and check
       which files it reports writing — that is where your agent expects to find
       the entry.
     </p>
