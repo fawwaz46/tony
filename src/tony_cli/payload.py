@@ -14,7 +14,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from tony_cli.layout import isSkippable, itemsByPath, layout, parseReview, runCoverage
+from tony_cli.layout import isSkippable, itemsByPath, layout, runCoverage
 from tony_cli.source.local import confine, splitDiffByFile
 
 VERSION = 1
@@ -156,9 +156,15 @@ def laidOutFiles(diff, annotations, risks):
     return out
 
 
-def buildPayload(review, diff, repoPath, rangeLabel=""):
-    """The whole review as one JSON-serialisable dict, with no repo access needed."""
-    data = parseReview(review)
+def buildPayload(data, diff, repoPath, rangeLabel=""):
+    """The whole review as one JSON-serialisable dict, with no repo access needed.
+
+    `data` is the review already parsed. It arrives that way from `tony_publish`,
+    which is handed an object; the API path finds it inside a fenced block first.
+    Parsing here instead would mean this function silently produced a page with
+    no annotations whenever it was given something that was already a dict —
+    which looks exactly like a review that found nothing to say.
+    """
     impacts = data.get("impacts") or []
     annotations = data.get("annotations") or []
     risks = data.get("risks") or []

@@ -511,6 +511,14 @@ def main(argv=None):
             print("usage: tony unpublish <id>", file=sys.stderr)
             return 2
         return hosted.unpublish(argv[1])
+    # Imported here, not at the top: it pulls in the MCP SDK, and `tony` as a
+    # CLI should not pay that import on every run to serve one subcommand.
+    if argv[:1] == ["mcp"]:
+        from tony_cli.mcp_server import serve
+        return serve(argv[1:])
+    if argv[:1] == ["install"]:
+        from tony_cli import mcp_config
+        return mcp_config.install(argv[1:])
     if argv[:1] == ["update"]:
         return install.update(argv[1:])
     if argv[:1] == ["uninstall"]:
@@ -523,6 +531,8 @@ def main(argv=None):
         epilog=(
             "commands:\n"
             "  tony <path> [BASE...HEAD]      review a diff — the default\n"
+            "  tony install [host ...]        register the MCP server with your agent\n"
+            "  tony mcp                       run the MCP server on stdio\n"
             "  tony update                    update to the latest release\n"
             "  tony uninstall                 delete tony, its key, and every saved review\n"
             "  tony --version                 what is installed\n"
@@ -715,7 +725,7 @@ def main(argv=None):
         return 1
 
     rangeLabel = f"{base or 'default'}...{head}"
-    payloadJson = dumpPayload(buildPayload(text, diff, root, rangeLabel))
+    payloadJson = dumpPayload(buildPayload(parseReview(text), diff, root, rangeLabel))
 
     path = reportPath(root, base, head)
     page = renderPage(payloadJson, title=f"tony — {os.path.basename(root)}")

@@ -322,3 +322,65 @@ def unpublish(reviewId):
     else:
         print(f"tony: could not remove it ({resp.status_code}).", file=sys.stderr)
     return 1
+
+
+# --- the instruction document ----------------------------------------------
+
+INSTRUCTIONS = os.path.join(CONFIG_DIR, "instructions.json")
+
+
+def cachedInstructions():
+    """The last document this machine was served, or None.
+
+    Purely a bandwidth optimisation: it exists so the usual response is a 304
+    and a few hundred bytes instead of 13 KB. It is never a fallback — a review
+    written against a document the server did not just confirm is a review
+    written against a contract that may no longer be the one being enforced.
+    """
+    try:
+        with open(INSTRUCTIONS, encoding="utf-8") as fh:
+            saved = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if saved.get("version") and saved.get("document"):
+        return saved
+    return None
+
+
+def cacheInstructions(saved):
+    try:
+        os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+        with open(INSTRUCTIONS, "w", encoding="utf-8") as fh:
+            json.dump(saved, fh)
+    except OSError:
+        pass  # A cache that cannot be written costs a few KB, not a review.
+
+
+def fetchInstructions():
+    """The current instruction document. Returns (saved, problem).
+
+    `saved` is `{"version", "document"}`. The version is the server's content
+    hash: it identifies which contract a review was written against, which is
+    the only way to tell later whether changing the document changed anything.
+    """
+    base = apiBase()
+    cached = cachedInstructions()
+    headers = {"If-None-Match": f'"{cached["version"]}"'} if cached else {}
+
+    try:
+        resp = httpx.get(f"{base}/api/instructions", headers=headers, timeout=15)
+    except httpx.HTTPError as e:
+        return None, f"could not reach {base}: {e}"
+
+    if resp.status_code == 304 and cached:
+        return cached, None
+    if resp.status_code != 200:
+        return None, f"the site returned {resp.status_code} for the instructions."
+
+    body = asJson(resp)
+    if not body or not body.get("document") or not body.get("version"):
+        return None, "the site served an unusable instruction document."
+
+    saved = {"version": body["version"], "document": body["document"]}
+    cacheInstructions(saved)
+    return saved, None
