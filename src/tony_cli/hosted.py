@@ -433,7 +433,12 @@ def publish(payloadJson, repo="", rangeLabel=""):
     if resp.status_code == 413:
         return None, "this review is over the upload size limit."
     if resp.status_code != 200:
-        return None, f"upload failed ({resp.status_code})."
+        # The site says why in the body. Reporting only the status turned a
+        # server that had been told exactly what was wrong into a bare number
+        # on this end, and sent the diagnosis looking in the wrong place.
+        said = (asJson(resp) or {}).get("error")
+        return None, f"upload failed ({resp.status_code}): {said}" if said else \
+            f"upload failed ({resp.status_code})."
 
     body = asJson(resp) or {}
     if not body.get("id"):

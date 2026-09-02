@@ -351,3 +351,23 @@ def test_no_browser_asks_the_caller_to_fall_back(monkeypatch):
     """A headless box must land on the device flow, not on a five-minute wait."""
     monkeypatch.setattr(hosted.webbrowser, "open", lambda url: False)
     assert hosted.browserLogin() == hosted.NO_BROWSER
+
+
+# --- what a failed upload tells you ----------------------------------------
+
+def test_a_rejected_upload_repeats_what_the_site_said(monkeypatch, capsys):
+    """A bare status code sent a real investigation at the wrong subsystem."""
+    monkeypatch.setattr(hosted, "savedToken", lambda: "tok")
+    monkeypatch.setattr(hosted.httpx, "post", lambda *a, **k: FakeResponse(
+        {"error": "this server is not configured to store reviews yet"}, status=503))
+
+    url, problem = hosted.publish("{}")
+    assert url is None
+    assert "503" in problem
+    assert "not configured to store reviews" in problem
+
+
+def test_an_upload_failure_with_no_body_still_reports_the_status(monkeypatch):
+    monkeypatch.setattr(hosted, "savedToken", lambda: "tok")
+    monkeypatch.setattr(hosted.httpx, "post", lambda *a, **k: FakeResponse("nope", status=502))
+    assert hosted.publish("{}")[1] == "upload failed (502)."

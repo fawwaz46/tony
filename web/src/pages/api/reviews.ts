@@ -12,7 +12,7 @@
 import type { APIRoute } from "astro";
 import { put } from "@vercel/blob";
 import { TooLarge, gunzip, gzip, isGzip } from "../../server/compress";
-import { seal } from "../../server/crypto";
+import { encryptionConfigured, seal } from "../../server/crypto";
 import { fail, migrate, sql, userForToken, withDatabase } from "../../server/db";
 import { capped } from "../../server/safe";
 
@@ -43,6 +43,14 @@ export const POST: APIRoute = async ({ request }) => {
   // the database, so an unauthenticated flood costs a header read.
   const auth = request.headers.get("Authorization");
   if (!auth) return fail(401, "login required");
+
+  // Every stored review is sealed, so a deployment without the key cannot keep
+  // one. Refusing here names the missing setting in the log instead of failing
+  // later as an unexplained error, and costs the caller nothing to be told.
+  if (!encryptionConfigured()) {
+    console.error("TONY_ENCRYPTION_KEY is not set; refusing to accept a review");
+    return fail(503, "this server is not configured to store reviews yet");
+  }
 
   // Bytes, not text: the CLI gzips before upload, and older CLIs still send
   // plain JSON. The magic bytes say which, so neither needs a flag day.

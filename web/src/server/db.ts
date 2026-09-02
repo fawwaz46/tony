@@ -54,15 +54,41 @@ export const fail = (status: number, error: string) =>
  * Run a handler that needs the database, turning an outage into an honest 503
  * rather than a stack trace. Auth checks belong *before* this where possible —
  * an unauthenticated request should be rejected without a query.
+ *
+ * It wraps the WHOLE handler, so most of what it catches never touched the
+ * database. Saying "the database is unavailable" for all of it sent a real
+ * investigation — a missing encryption key — at the database for an hour. Only
+ * a failure to reach Postgres gets that answer now; anything else is reported
+ * as what it is, an error on our side, and logged without a diagnosis attached.
  */
 export async function withDatabase(run: () => Promise<Response>): Promise<Response> {
   if (!databaseConfigured()) return fail(503, "the database is not configured");
   try {
     return await run();
   } catch (e) {
-    console.error("database error:", e);
-    return fail(503, "the database is unavailable");
+    if (looksLikeConnectionFailure(e)) {
+      console.error("database unreachable:", e);
+      return fail(503, "the database is unavailable");
+    }
+    console.error("request failed:", e);
+    return fail(500, "the server could not complete this request");
   }
+}
+
+/**
+ * Whether an error is Postgres being unreachable rather than our own bug.
+ *
+ * Matched on the driver's own signals: Neon's serverless client raises fetch
+ * failures for a network problem and carries a SQLSTATE `code` for anything
+ * the server itself answered. Anything without either is ours.
+ */
+function looksLikeConnectionFailure(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const err = e as { name?: string; message?: string; code?: string; sourceError?: unknown };
+  if (typeof err.code === "string" && err.code) return true;
+  if (err.sourceError) return true;
+  const text = `${err.name ?? ""} ${err.message ?? ""}`.toLowerCase();
+  return /fetch failed|econnrefused|etimedout|enotfound|connection|socket/.test(text);
 }
 
 let migrated = false;

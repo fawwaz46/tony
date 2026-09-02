@@ -19,6 +19,17 @@ import { env } from "./env";
 
 let cached: CryptoKey | null = null;
 
+/**
+ * Whether this deployment can seal a review at all.
+ *
+ * Checked before an upload is accepted rather than discovered halfway through
+ * one: without it the first sign that reviews cannot be stored is a generic
+ * error after the payload has already been received and inflated.
+ */
+export function encryptionConfigured(): boolean {
+  return Boolean(env("TONY_ENCRYPTION_KEY"));
+}
+
 async function key(): Promise<CryptoKey> {
   if (cached) return cached;
   const raw = env("TONY_ENCRYPTION_KEY");
