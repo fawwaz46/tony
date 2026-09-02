@@ -8,6 +8,7 @@
 import type { APIRoute } from "astro";
 import { createToken, migrate, throttle, upsertUser, withDatabase } from "../../../server/db";
 import { env } from "../../../server/env";
+import { provider } from "../../../server/providers";
 
 export const prerender = false;
 
@@ -68,9 +69,16 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
 
   return withDatabase(async () => {
     await migrate();
-    const token = await createToken(await upsertUser(gh));
+    // The device flow talks to GitHub directly, so it reuses the GitHub
+    // provider's own profile reader rather than keeping a second idea of what
+    // a GitHub account looks like — including which email counts as verified.
+    const profile = (await provider("github")!.profile(accessToken)) ?? {
+      provider: "github", providerId: String(gh.id), login: gh.login,
+      avatarUrl: gh.avatar_url ?? "",
+    };
+    const token = await createToken(await upsertUser(profile));
 
-    return new Response(JSON.stringify({ token, githubLogin: gh.login }), {
+    return new Response(JSON.stringify({ token, login: gh.login, githubLogin: gh.login }), {
       headers: { "Content-Type": "application/json" },
     });
   });

@@ -1,15 +1,32 @@
 /**
- * Finish a browser login: verify state, trade the code, start a session.
+ * Finish a login: verify state, trade the code, start a session.
  *
- * The GitHub access token is used once to ask who this is and never stored —
- * the session cookie is tony's own, and revocable from tony's own tables.
+ * The provider's access token is used once to ask who this is and never
+ * stored — the session cookie is tony's own, and revocable from tony's own
+ * tables.
+ *
+ * A CLI login ends here too. It gets the same session cookie, so the browser
+ * it just used is signed in as well, and is then sent to the loopback port the
+ * CLI is listening on carrying a one-time code. Never the token itself: a
+ * redirect URL lands in browser history and in the referrer of anything the
+ * landing page loads.
  */
 import type { APIRoute } from "astro";
-import { SESSION_COOKIE, createSession, migrate, upsertUser } from "../../../server/db";
-import { env } from "../../../server/env";
+import {
+  SESSION_COOKIE, createCliCode, createSession, migrate, upsertUser,
+} from "../../../server/db";
+import { exchangeCode, provider } from "../../../server/providers";
 import { safeNext, siteOrigin } from "../../../server/safe";
 
 export const prerender = false;
+
+interface Pending {
+  state: string;
+  provider: string;
+  next: string;
+  cliPort?: number;
+  cliState?: string;
+}
 
 export const GET: APIRoute = async ({ url, request, cookies, redirect }) => {
   const raw = cookies.get("tony_oauth")?.value;
@@ -18,37 +35,31 @@ export const GET: APIRoute = async ({ url, request, cookies, redirect }) => {
   const origin = siteOrigin(request, url.origin);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  if (!raw || !code || !state) return redirect("/?error=login", 302);
+  if (!raw || !code || !state) return redirect("/login?error=login", 302);
 
-  let expected: { state: string; next: string };
+  let expected: Pending;
   try {
     expected = JSON.parse(raw);
   } catch {
-    return redirect("/?error=login", 302);
+    return redirect("/login?error=login", 302);
   }
-  if (expected.state !== state) return redirect("/?error=login", 302);
+  if (expected.state !== state) return redirect("/login?error=login", 302);
 
-  const tokenResp = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: env("GITHUB_CLIENT_ID"),
-      client_secret: env("GITHUB_CLIENT_SECRET"),
-      code,
-      redirect_uri: `${origin}/api/auth/callback`,
-    }),
-  });
-  const token = (await tokenResp.json())?.access_token;
-  if (!token) return redirect("/?error=login", 302);
+  // Which provider this is comes from the cookie, not the URL. Reading it from
+  // the query would let a crafted callback have one provider's code redeemed
+  // against another's credentials.
+  const chosen = provider(expected.provider);
+  if (!chosen) return redirect("/login?error=login", 302);
 
-  const ghResp = await fetch("https://api.github.com/user", {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": "tony" },
-  });
-  if (!ghResp.ok) return redirect("/?error=login", 302);
-  const gh = await ghResp.json();
+  const accessToken = await exchangeCode(chosen, code, `${origin}/api/auth/callback`);
+  if (!accessToken) return redirect("/login?error=login", 302);
+
+  const profile = await chosen.profile(accessToken);
+  if (!profile) return redirect("/login?error=login", 302);
 
   await migrate();
-  const sessionId = await createSession(await upsertUser(gh));
+  const userId = await upsertUser(profile);
+  const sessionId = await createSession(userId);
   cookies.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
     secure: origin.startsWith("https:"),
@@ -56,6 +67,14 @@ export const GET: APIRoute = async ({ url, request, cookies, redirect }) => {
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });
+
+  if (expected.cliPort && expected.cliState) {
+    const handoff = await createCliCode(userId);
+    const loopback = new URL(`http://127.0.0.1:${expected.cliPort}/`);
+    loopback.searchParams.set("code", handoff);
+    loopback.searchParams.set("state", expected.cliState);
+    return redirect(loopback.toString(), 302);
+  }
 
   // Re-validated on the way back: the cookie is ours, but it round-tripped
   // through the browser and costs nothing to check twice.

@@ -190,3 +190,53 @@
   .demo-scroll { max-height: 28rem; }
   .foot { flex-wrap: wrap; gap: .5rem 1rem; }
 }
+
+/* ---- sign-in and the CLI hand-back ---- */
+.auth { padding: 4.5rem 0 4rem; max-width: 38rem; }
+.auth h1 { font-size: clamp(1.5rem, 3.4vw, 2rem); font-weight: 700;
+  letter-spacing: -.04em; line-height: 1.1; color: var(--ink); margin: 0 0 1rem; }
+.auth .sub { font-size: .95rem; line-height: 1.6; color: var(--ink-3);
+  max-width: 46ch; margin: 0 0 2rem; }
+.auth .fine { font-size: .8rem; line-height: 1.55; color: var(--ink-4);
+  max-width: 50ch; margin: 1.75rem 0 0; }
+.auth .fine a { color: var(--ink-3); text-decoration: underline; text-underline-offset: 2px; }
+.auth .fine a:hover { color: var(--ink); }
+
+.ways { display: flex; flex-direction: column; gap: .6rem; max-width: 22rem; }
+/* Deliberately not `.btn`: these are a list of equal choices, not one primary
+   action, so none of them takes the accent. */
+.way { display: flex; align-items: center; gap: .7rem;
+  font: 500 .72rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  padding: .95rem 1.15rem; border: 1px solid var(--rule-2); background: var(--s1);
+  color: var(--ink-2); text-decoration: none; }
+.way:hover { border-color: var(--rule-3); color: var(--ink); background: var(--s2); }
+.way:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.way svg { flex: none; color: var(--ink-3); }
+.way:hover svg { color: var(--ink); }
+
+.auth .next { border-top: 1px solid var(--rule); margin: 2.25rem 0 2rem; padding-top: 1.5rem; }
+.auth .next .lbl { font: 500 .62rem/1 var(--mono); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4); margin: 0 0 .8rem; }
+.auth .next .fine { margin-top: .9rem; }
+
+/* ---- documentation ---- */
+.steps { border-top: 1px solid var(--rule); margin-top: 1.25rem; }
+.step { display: flex; gap: 1.5rem; padding: 1.75rem 0;
+  border-bottom: 1px solid var(--rule); }
+.step .n { font-family: var(--mono); font-size: .7rem; color: var(--ink-4);
+  letter-spacing: .06em; flex: none; padding-top: .2rem; }
+.step > div { min-width: 0; flex: 1; }
+.step h3 { font-size: 1rem; font-weight: 500; color: var(--ink);
+  margin: 0 0 .5rem; letter-spacing: -.02em; }
+.step p { font-size: .875rem; line-height: 1.55; color: var(--ink-3);
+  margin: 0 0 1rem; max-width: 58ch; }
+.step p b { color: var(--ink-2); font-weight: 500; }
+.step p code, .cmds code { color: var(--ink-2); font-size: .85em; }
+
+.cmds { border-top: 1px solid var(--rule); margin: 1.25rem 0 0; }
+.cmds dt { font-family: var(--mono); font-size: .8rem; color: var(--ink-2);
+  padding: 1.1rem 0 .35rem; }
+.cmds dd { font-size: .875rem; line-height: 1.55; color: var(--ink-3);
+  margin: 0 0 1.1rem; border-bottom: 1px solid var(--rule); padding-bottom: 1.1rem;
+  max-width: 58ch; }
+@media (max-width: 40rem) { .step { gap: 1rem; } }

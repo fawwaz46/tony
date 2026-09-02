@@ -17,9 +17,13 @@ never stored.
 import gzip
 import json
 import os
+import secrets
 import stat
 import sys
 import time
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 
@@ -73,8 +77,10 @@ def saveToken(token, login):
     os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     fd = os.open(CREDENTIALS, flags, stat.S_IRUSR | stat.S_IWUSR)
+    # `githubLogin` is written alongside `login` because a credentials file is
+    # read by whatever tony is installed, and an older one only knows that name.
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump({"token": token, "githubLogin": login}, fh)
+        json.dump({"token": token, "login": login, "githubLogin": login}, fh)
 
 
 def clearToken():
@@ -87,12 +93,155 @@ def clearToken():
 
 # --- login -----------------------------------------------------------------
 
-def login():
-    """GitHub device flow, then trade the GitHub token for a tony API token.
+def login(argv=None):
+    """Sign this machine in. Browser by default, device flow on request.
 
     Returns 0 on success, non-zero on failure, and prints its own messages —
     this is a user-facing command, not a library call.
     """
+    argv = argv or []
+    if "--device" in argv:
+        return deviceLogin()
+    code = browserLogin()
+    if code != NO_BROWSER:
+        return code
+    # Only a machine that could not open a browser falls through. Saying so
+    # beats leaving someone on a headless box guessing at what went wrong.
+    print("tony: no browser here — falling back to a code you can approve "
+          "on another device.\n", file=sys.stderr)
+    return deviceLogin()
+
+
+# `browserLogin` says "there is no browser on this machine" with this, so the
+# caller can fall back rather than treating it as a failure.
+NO_BROWSER = 3
+
+# How long the loopback listener waits for the browser to come back. Long
+# enough to sign up for a provider mid-flow; short enough that a forgotten
+# terminal does not hold a port forever.
+LOGIN_TIMEOUT = 300
+
+
+class _Handoff(BaseHTTPRequestHandler):
+    """The one request this login is waiting for.
+
+    The browser arrives here after the site has authenticated someone, carrying
+    a single-use code and the nonce this process generated. Everything the
+    handler learns goes on the server object, because there is exactly one
+    request and then the server stops.
+    """
+
+    def do_GET(self):
+        query = parse_qs(urlparse(self.path).query)
+        code = (query.get("code") or [""])[0]
+        state = (query.get("state") or [""])[0]
+
+        # A browser on this machine can be pointed at this port by any page the
+        # user happens to be visiting. The nonce is what distinguishes the
+        # redirect this login started from a drive-by request.
+        if not code or state != self.server.state:
+            self.send_error(400, "not a tony login")
+            return
+
+        self.server.result = exchangeCliCode(code)
+        done = f"{apiBase()}/cli/done"
+        if self.server.result and self.server.result.get("login"):
+            done += "?as=" + quote(self.server.result["login"], safe="")
+
+        # The browser is sent back to the site to be told it worked. A page
+        # served from here could say the same thing, but it would be a page on
+        # a localhost port that vanishes a second later — and the site is where
+        # the next step lives.
+        self.send_response(302)
+        self.send_header("Location", done)
+        self.end_headers()
+
+    def log_message(self, *args):
+        """Silence. The access log would print over the CLI's own output."""
+
+
+def browserLogin():
+    """Open a browser, wait on a loopback port, and save what comes back."""
+    base = apiBase()
+    if not base:
+        print("tony: TONY_API_URL is not set — there is no site to log in to yet.",
+              file=sys.stderr)
+        return 2
+
+    # Port 0 lets the OS pick a free one; 127.0.0.1 rather than 0.0.0.0 so
+    # nothing off this machine can reach it even for the moment it is up.
+    try:
+        server = HTTPServer(("127.0.0.1", 0), _Handoff)
+    except OSError as e:
+        print(f"tony: could not open a local port to finish login: {e}", file=sys.stderr)
+        return NO_BROWSER
+
+    server.state = secrets.token_hex(16)
+    server.result = None
+    server.timeout = LOGIN_TIMEOUT
+    port = server.server_address[1]
+    url = f"{base}/login?cli={port}&state={server.state}"
+
+    opened = False
+    try:
+        opened = webbrowser.open(url)
+    except Exception:
+        opened = False
+    if not opened:
+        server.server_close()
+        return NO_BROWSER
+
+    print("\n  Opening your browser to finish signing in.")
+    print(f"  If it did not open: {url}\n")
+    print("  Waiting — press Ctrl-C to give up.", file=sys.stderr)
+
+    try:
+        # One request, then stop. `handle_request` honours `server.timeout` and
+        # simply returns when nothing arrives, which is the give-up path.
+        server.handle_request()
+    except KeyboardInterrupt:
+        print("\ntony: login cancelled.", file=sys.stderr)
+        return 1
+    finally:
+        server.server_close()
+
+    result = server.result
+    if result is None:
+        print("tony: the browser never came back. Run tony login again.",
+              file=sys.stderr)
+        return 1
+    if result.get("error"):
+        print(f"tony: {result['error']}", file=sys.stderr)
+        return 1
+
+    saveToken(result["token"], result.get("login", ""))
+    print(f"tony: signed in as {result.get('login') or 'you'}.")
+    return 0
+
+
+def exchangeCliCode(code):
+    """Trade the browser's one-time code for a token. Returns a dict either way.
+
+    Runs on the handler's thread, so the browser is held on the redirect until
+    the token is in hand — which is what lets the success page name the account
+    and lets a failure be reported here rather than on a page that has already
+    said everything worked.
+    """
+    try:
+        resp = httpx.post(f"{apiBase()}/api/auth/cli", json={"code": code}, timeout=15)
+    except httpx.HTTPError as e:
+        return {"error": f"approved, but could not reach {apiBase()}: {e}"}
+
+    if resp.status_code != 200:
+        return {"error": f"the site rejected the sign-in ({resp.status_code})."}
+    body = asJson(resp) or {}
+    if not body.get("token"):
+        return {"error": "the site returned no token."}
+    return {"token": body["token"], "login": body.get("login") or body.get("githubLogin") or ""}
+
+
+def deviceLogin():
+    """GitHub device flow, then trade the GitHub token for a tony API token."""
     base = apiBase()
     if not base:
         print("tony: TONY_API_URL is not set — there is no site to log in to yet.",
@@ -201,20 +350,22 @@ def login():
     if not body.get("token"):
         print("tony: the tony API returned no token.", file=sys.stderr)
         return 1
-    saveToken(body["token"], body.get("githubLogin", ""))
-    print(f"tony: logged in as {body.get('githubLogin', 'you')}.")
+    who = body.get("login") or body.get("githubLogin") or ""
+    saveToken(body["token"], who)
+    print(f"tony: signed in as {who or 'you'}.")
     return 0
 
 
 def whoami():
-    """Who this machine is logged in as, if anyone."""
+    """Who this machine is signed in as, if anyone."""
     try:
         with open(CREDENTIALS, encoding="utf-8") as fh:
             saved = json.load(fh)
     except (OSError, json.JSONDecodeError):
-        print("tony: not logged in. Run `tony login` to publish reviews.")
+        print("tony: not signed in. Run `tony login` to publish reviews.")
         return 1
-    print(f"tony: logged in as {saved.get('githubLogin') or 'unknown'}.")
+    who = saved.get("login") or saved.get("githubLogin") or "unknown"
+    print(f"tony: signed in as {who}.")
     return 0
 
 

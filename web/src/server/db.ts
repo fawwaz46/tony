@@ -78,6 +78,37 @@ export async function migrate(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT ''`;
+  // A user is no longer one GitHub account. `login` is whatever they are called
+  // wherever they signed in; `email` is only ever written when the provider
+  // said it was verified, because it is what accounts are merged on.
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS login TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`;
+  await sql`UPDATE users SET login = github_login WHERE login = ''`;
+
+  // One row per provider account, so one person can sign in with GitHub on
+  // Monday and Google on Tuesday and land on the same reviews.
+  await sql`
+    CREATE TABLE IF NOT EXISTS identities (
+      provider TEXT NOT NULL,
+      provider_id TEXT NOT NULL,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (provider, provider_id)
+    )`;
+  // Everyone who existed before this table got here through GitHub.
+  await sql`
+    INSERT INTO identities (provider, provider_id, user_id)
+    SELECT 'github', github_id::text, id FROM users WHERE github_id IS NOT NULL
+    ON CONFLICT DO NOTHING`;
+  // github_id was UNIQUE NOT NULL, which a Google-only user cannot satisfy.
+  // The column stays for now — dropping it is a separate, later migration —
+  // but it stops being required.
+  await sql`ALTER TABLE users ALTER COLUMN github_id DROP NOT NULL`;
+  await sql`ALTER TABLE users ALTER COLUMN github_login DROP NOT NULL`;
+  // Merging happens on a verified email, so two accounts must never share one.
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_by_email
+      ON users (lower(email)) WHERE email IS NOT NULL`;
   await sql`
     CREATE TABLE IF NOT EXISTS tokens (
       hash TEXT PRIMARY KEY,
@@ -130,6 +161,16 @@ export async function migrate(): Promise<void> {
       END IF;
     END $$;`;
   await sql`CREATE INDEX IF NOT EXISTS reviews_by_user ON reviews (user_id, created_at DESC)`;
+  // The handoff from a browser login back to the waiting CLI. The browser is
+  // redirected to the CLI's loopback port carrying one of these, never a token:
+  // a redirect URL lands in history and in the referrer of anything the landing
+  // page loads, and this is worth nothing sixty seconds later or twice.
+  await sql`
+    CREATE TABLE IF NOT EXISTS cli_codes (
+      hash TEXT PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL
+    )`;
   migrated = true;
 }
 
@@ -146,7 +187,8 @@ export function randomToken(): string {
 
 export interface User {
   id: number;
-  githubLogin: string;
+  /** Whatever this person is called wherever they signed in. */
+  login: string;
   avatarUrl: string;
 }
 
@@ -155,11 +197,11 @@ export async function userForToken(header: string | null): Promise<User | null> 
   const token = header?.match(/^Bearer (.+)$/)?.[1];
   if (!token) return null;
   const rows = await sql`
-    SELECT u.id, u.github_login, u.avatar_url
+    SELECT u.id, u.login, u.avatar_url
     FROM tokens t JOIN users u ON u.id = t.user_id
     WHERE t.hash = ${await sha256Hex(token)} AND t.expires_at > now()`;
   if (!rows.length) return null;
-  return { id: Number(rows[0].id), githubLogin: rows[0].github_login, avatarUrl: rows[0].avatar_url };
+  return { id: Number(rows[0].id), login: rows[0].login, avatarUrl: rows[0].avatar_url };
 }
 
 export const SESSION_COOKIE = "tony_session";
@@ -196,11 +238,11 @@ export function throttle(key: string, limit: number, windowMs: number): boolean 
 export async function userForSession(sessionId: string | undefined): Promise<User | null> {
   if (!sessionId) return null;
   const rows = await sql`
-    SELECT u.id, u.github_login, u.avatar_url
+    SELECT u.id, u.login, u.avatar_url
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.hash = ${await sha256Hex(sessionId)} AND s.expires_at > now()`;
   if (!rows.length) return null;
-  return { id: Number(rows[0].id), githubLogin: rows[0].github_login, avatarUrl: rows[0].avatar_url };
+  return { id: Number(rows[0].id), login: rows[0].login, avatarUrl: rows[0].avatar_url };
 }
 
 export async function createSession(userId: number): Promise<string> {
@@ -222,12 +264,90 @@ export async function createToken(userId: number): Promise<string> {
   return token;
 }
 
-export async function upsertUser(gh: { id: number; login: string; avatar_url?: string }): Promise<number> {
+/** One account as a provider described it. `email` is set ONLY if verified. */
+export interface Profile {
+  provider: string;
+  providerId: string;
+  login: string;
+  avatarUrl?: string;
+  email?: string;
+}
+
+/**
+ * The user behind a provider account, created or updated.
+ *
+ * Two accounts merge only on an email the provider swore was verified. That
+ * restriction is the whole security of this function: an unverified address is
+ * something a signup form will accept without proof, so merging on one would
+ * let anyone reach an existing account by claiming its owner's email at a
+ * provider that never checked. A profile arriving without a verified email
+ * gets its own user, which is the safe failure.
+ */
+export async function upsertUser(profile: Profile): Promise<number> {
+  const { provider, providerId, login } = profile;
+  const avatarUrl = profile.avatarUrl ?? "";
+  const email = profile.email ?? null;
+
+  const known = await sql`
+    SELECT user_id FROM identities
+    WHERE provider = ${provider} AND provider_id = ${providerId}`;
+  if (known.length) {
+    const userId = Number(known[0].user_id);
+    await sql`
+      UPDATE users SET login = ${login}, avatar_url = ${avatarUrl},
+                       email = COALESCE(${email}, email)
+      WHERE id = ${userId}`;
+    return userId;
+  }
+
+  // A first sign-in with this provider. If a verified email already belongs to
+  // an account, this is the same person arriving by a second door.
+  let userId: number | null = null;
+  if (email) {
+    const byEmail = await sql`SELECT id FROM users WHERE lower(email) = lower(${email})`;
+    if (byEmail.length) userId = Number(byEmail[0].id);
+  }
+
+  if (userId === null) {
+    const created = await sql`
+      INSERT INTO users (login, avatar_url, email)
+      VALUES (${login}, ${avatarUrl}, ${email})
+      RETURNING id`;
+    userId = Number(created[0].id);
+  }
+
+  await sql`
+    INSERT INTO identities (provider, provider_id, user_id)
+    VALUES (${provider}, ${providerId}, ${userId})
+    ON CONFLICT (provider, provider_id) DO NOTHING`;
+  return userId;
+}
+
+/** How long the browser has to hand its code back to the waiting CLI. */
+const CLI_CODE_SECONDS = 120;
+
+/** A one-time code the CLI can trade for a token. */
+export async function createCliCode(userId: number): Promise<string> {
+  const code = randomToken();
+  await sql`
+    INSERT INTO cli_codes (hash, user_id, expires_at)
+    VALUES (${await sha256Hex(code)}, ${userId},
+            now() + make_interval(secs => ${CLI_CODE_SECONDS}::int))`;
+  return code;
+}
+
+/**
+ * Spend a code and return whose it was, or null.
+ *
+ * The delete is the check: `DELETE ... RETURNING` is atomic, so two requests
+ * racing with the same code cannot both come back with a user. Expired rows
+ * are removed on the way past rather than by a job.
+ */
+export async function spendCliCode(code: string): Promise<number | null> {
   const rows = await sql`
-    INSERT INTO users (github_id, github_login, avatar_url)
-    VALUES (${gh.id}, ${gh.login}, ${gh.avatar_url ?? ""})
-    ON CONFLICT (github_id) DO UPDATE
-      SET github_login = ${gh.login}, avatar_url = ${gh.avatar_url ?? ""}
-    RETURNING id`;
-  return Number(rows[0].id);
+    DELETE FROM cli_codes
+    WHERE hash = ${await sha256Hex(code)} AND expires_at > now()
+    RETURNING user_id`;
+  await sql`DELETE FROM cli_codes WHERE expires_at <= now()`;
+  return rows.length ? Number(rows[0].user_id) : null;
 }

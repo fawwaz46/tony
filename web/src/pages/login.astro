@@ -1,0 +1,92 @@
+---
+/**
+ * Pick a way in.
+ *
+ * The same page serves a browser login and the one `tony login` opens. In the
+ * CLI case it carries the loopback port and nonce through to the provider
+ * redirect, so whichever button gets clicked comes back to the waiting
+ * terminal — the choice of provider is the user's, and the CLI does not need
+ * to know which one they picked.
+ *
+ * Only providers this deployment has credentials for are shown. A button that
+ * leads to a provider error page is worse than an absent button.
+ */
+import Shell from "../layouts/Shell.astro";
+import { configured } from "../server/providers";
+
+// Read at request time, not build time: this page's whole job is to act on its
+// query string, and a prerendered copy would never see one.
+export const prerender = false;
+
+const params = Astro.url.searchParams;
+const providers = configured();
+
+// Validated the same way the start route validates them, so a malformed pair
+// is dropped here rather than silently producing a login that never returns.
+const port = /^\d{1,5}$/.test(params.get("cli") ?? "") ? params.get("cli")! : "";
+const state = /^[a-f0-9]{16,64}$/.test(params.get("state") ?? "") ? params.get("state")! : "";
+const forCli = Boolean(port && state);
+
+const errors: Record<string, string> = {
+  login: "That sign-in did not complete. Nothing was saved — try again.",
+  unavailable: "That option is not available on this deployment.",
+  unconfigured: "This deployment has no sign-in configured yet.",
+};
+const error = errors[params.get("error") ?? ""] ?? "";
+
+function href(id: string) {
+  const url = new URLSearchParams({ provider: id });
+  if (forCli) {
+    url.set("cli", port);
+    url.set("cliState", state);
+  } else {
+    const next = params.get("next");
+    if (next) url.set("next", next);
+  }
+  return `/api/auth/start?${url}`;
+}
+
+const marks: Record<string, string> = {
+  github: "M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7 0-.7 0-.7 1.2.1 1.9 1.2 1.9 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.9 18.3 5.2 18.3 5.2c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3",
+  google: "M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.4a5.5 5.5 0 0 1-2.4 3.6v3h3.9c2.2-2.1 3.6-5.2 3.6-8.8zM12 24c3.2 0 6-1.1 8-3l-3.9-3a7.2 7.2 0 0 1-10.7-3.8h-4v3.1A12 12 0 0 0 12 24zM5.3 14.2a7.1 7.1 0 0 1 0-4.6v-3h-4a12 12 0 0 0 0 10.7l4-3.1zM12 4.8c1.8 0 3.4.6 4.6 1.8l3.5-3.5A12 12 0 0 0 1.3 6.5l4 3.1A7.2 7.2 0 0 1 12 4.8z",
+};
+---
+
+<Shell title="Sign in — tony" description="Sign in to tony.">
+  <div class="auth">
+    <p class="cap">{forCli ? "Signing in the tony CLI" : "Sign in"}</p>
+    <h1>{forCli ? "Finish setting up tony" : "Sign in to tony"}</h1>
+    <p class="sub">
+      {forCli
+        ? "Pick an account. When it is done, this page will tell you to go back to your terminal."
+        : "Reviews you publish are kept under this account."}
+    </p>
+
+    {error && <p class="notice bad">{error}</p>}
+
+    {
+      providers.length === 0 ? (
+        <p class="notice bad">
+          No sign-in provider is configured on this deployment yet.
+        </p>
+      ) : (
+        <div class="ways">
+          {providers.map((p) => (
+            <a class="way" href={href(p.id)} rel="nofollow">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                <path fill="currentColor" d={marks[p.id] ?? ""} />
+              </svg>
+              Continue with {p.label}
+            </a>
+          ))}
+        </div>
+      )
+    }
+
+    <p class="fine">
+      tony reads the account's name and avatar, and a verified email address if
+      the provider gives one. It never asks for access to your code.
+      <a href="/privacy">What is stored</a>.
+    </p>
+  </div>
+</Shell>

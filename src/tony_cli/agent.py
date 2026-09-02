@@ -501,7 +501,7 @@ def main(argv=None):
     # Account commands, dispatched before argparse so `tony login` does not
     # read as a repository path.
     if argv[:1] == ["login"]:
-        return hosted.login()
+        return hosted.login(argv[1:])
     if argv[:1] == ["logout"]:
         return hosted.logout()
     if argv[:1] == ["whoami"]:

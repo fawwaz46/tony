@@ -1,0 +1,47 @@
+---
+/**
+ * Where a CLI login ends: the page that says the terminal is ready.
+ *
+ * `tony login` sends the browser here after it has the token in hand, so
+ * arriving at this page is proof the handoff completed — there is nothing to
+ * check and nothing that can still fail. It exists to close the loop visually,
+ * because a browser left on a provider's own "you approved it" screen leaves
+ * people wondering whether the terminal got anything.
+ */
+import Shell from "../../layouts/Shell.astro";
+
+// Read at request time, not build time: this page's whole job is to act on its
+// query string, and a prerendered copy would never see one.
+export const prerender = false;
+
+const login = Astro.url.searchParams.get("as") ?? "";
+// The name comes off a query string, so it is shown only when it looks like a
+// username and never as anything but text.
+const who = /^[A-Za-z0-9 ._-]{1,39}$/.test(login) ? login : "";
+---
+
+<Shell title="You're signed in — tony" description="The tony CLI is signed in.">
+  <div class="auth done">
+    <p class="cap">Signed in</p>
+    <h1>{who ? `You're signed in as ${who}.` : "You're signed in."}</h1>
+    <p class="sub">
+      Your terminal has what it needs. You can close this tab and go back to it.
+    </p>
+
+    <div class="next">
+      <p class="lbl">Then, in any agent that has tony</p>
+      <div class="cmd">
+        <code><span class="p">&gt;</span> review this branch with tony</code>
+      </div>
+      <p class="fine">
+        The agent reads the diff, writes the review, and hands you back a link.
+        You do not need to run anything else.
+      </p>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn" href="/docs">How to use tony</a>
+      <a class="btn quiet" href="/reviews">Your reviews</a>
+    </div>
+  </div>
+</Shell>

@@ -44,7 +44,7 @@ const here = Astro.url.pathname + Astro.url.search;
               <a class="link" href="/reviews">Reviews</a>
               <span class="who">
                 {user.avatarUrl && <img src={user.avatarUrl} alt="" width="20" height="20" />}
-                {user.githubLogin}
+                {user.login}
               </span>
               <form method="POST" action="/api/auth/signout">
                 <button class="plain" type="submit">Sign out</button>
@@ -64,6 +64,7 @@ const here = Astro.url.pathname + Astro.url.search;
 
       <footer class="foot">
         <span>tony</span>
+        <a href="/docs">Docs</a>
         <a href="/privacy">Privacy</a>
         <span class="spacer"></span>
         <span>Reviews are encrypted at rest. tony holds the key.</span>

@@ -1,0 +1,154 @@
+---
+/**
+ * How to use tony, for someone who has just finished signing in.
+ *
+ * Written for the agent-native flow, which is the only one the setup walks
+ * anyone into: install, sign in, then tell an agent. The API-key path still
+ * exists and is deliberately not documented here — it is the headless entry
+ * point, not the thing to teach first.
+ */
+import Shell from "../layouts/Shell.astro";
+---
+
+<Shell title="How to use tony" description="Set tony up once, then ask any agent to review a branch.">
+  <div class="hero">
+    <p class="cap">Documentation</p>
+    <h1>Set it up once. Then just ask.</h1>
+    <p class="lede">
+      tony does not call a model. Your coding agent writes the review with the
+      subscription you already pay for, and tony gives it the diff, holds it to
+      a standard, and turns the result into a page you can send someone.
+    </p>
+  </div>
+
+  <section class="sec">
+    <p class="cap">Setup</p>
+    <h2 class="big">Three steps, once per machine.</h2>
+
+    <div class="steps">
+      <div class="step">
+        <span class="n">01</span>
+        <div>
+          <h3>Install</h3>
+          <p>Puts the <code>tony</code> command on your machine.</p>
+          <div class="cmd">
+            <code><span class="p">$</span> curl -fsSL https://tony-cli.com/install.sh | sh</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="n">02</span>
+        <div>
+          <h3>Connect it to your agent</h3>
+          <p>
+            Registers tony with Claude Code, Cursor, Amp, and Codex — whichever
+            of them you have. <b>Restart the agent afterwards</b>: it only reads
+            this list when it starts.
+          </p>
+          <div class="cmd">
+            <code><span class="p">$</span> tony install</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="n">03</span>
+        <div>
+          <h3>Sign in</h3>
+          <p>
+            Opens a browser. Pick an account, and the page will tell you when
+            your terminal is ready.
+          </p>
+          <div class="cmd">
+            <code><span class="p">$</span> tony login</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <p class="cap">Using it</p>
+    <h2 class="big">Ask the agent, not the terminal.</h2>
+    <p class="body">
+      Once tony is connected, it is something your agent can reach for. You do
+      not run a command — you say what you want reviewed, in whatever words you
+      would have used anyway.
+    </p>
+    <div class="cmd">
+      <code><span class="p">&gt;</span> review this branch with tony</code>
+    </div>
+    <p class="body" style="margin-top:1.25rem">
+      Or name a range: <code>review main...HEAD with tony</code>. The agent
+      reads the changed files, writes the review, and hands back a link. It runs
+      the review in a fresh context on purpose — an agent that just wrote the
+      code explains what it meant to do, where a clean one sees only what is
+      actually there.
+    </p>
+  </section>
+
+  <section class="sec">
+    <p class="cap">What comes back</p>
+    <h2 class="big">A page, not a summary in the chat.</h2>
+    <div class="three">
+      <div>
+        <span class="n">01</span>
+        <h3>Every hunk explained</h3>
+        <p>
+          What the code does when it runs, what it did before, and what the
+          difference means — written for someone who did not type it.
+        </p>
+      </div>
+      <div>
+        <span class="n">02</span>
+        <h3>Blast radius</h3>
+        <p>
+          The files the change reaches that are not in the diff. A diff shows
+          what was edited; it cannot show what breaks.
+        </p>
+      </div>
+      <div>
+        <span class="n">03</span>
+        <h3>Runtime walkthroughs</h3>
+        <p>
+          One concrete scenario, stepped through in execution order, with state
+          changing as you go.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <p class="cap">Housekeeping</p>
+    <h2 class="big">The rest of the commands.</h2>
+    <dl class="cmds">
+      <dt>tony install [claude|cursor|amp|codex]</dt>
+      <dd>Register with one agent instead of all of them.</dd>
+      <dt>tony whoami</dt>
+      <dd>Which account this machine is signed in as.</dd>
+      <dt>tony logout</dt>
+      <dd>Revoke this machine's token, then forget it locally.</dd>
+      <dt>tony unpublish &lt;id&gt;</dt>
+      <dd>Delete a published review. The id is printed when it is published.</dd>
+      <dt>tony update</dt>
+      <dd>Update to the latest release.</dd>
+      <dt>tony uninstall</dt>
+      <dd>Remove tony and everything it saved.</dd>
+    </dl>
+  </section>
+
+  <section class="sec" style="border-bottom:0">
+    <p class="cap">Trouble</p>
+    <h2 class="big">If the agent says it has never heard of tony.</h2>
+    <p class="body">
+      It has not restarted since <code>tony install</code> ran. An agent reads
+      its list of tools once, at startup. Quit it fully and open it again.
+    </p>
+    <p class="body">
+      If it still cannot see tony, run <code>tony install</code> again and check
+      which files it reports writing — that is where your agent expects to find
+      the entry.
+    </p>
+  </section>
+</Shell>

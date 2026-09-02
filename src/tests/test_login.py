@@ -5,10 +5,16 @@ they have already typed a code into GitHub by the time most of it runs. These
 drive the whole state machine against a fake GitHub and a fake site, including
 the paths that used to raise instead of explaining — a GitHub app with device
 flow switched off, a slow_down, an expired code, a dropped connection.
+
+`deviceLogin` rather than `login`, deliberately: `login` opens a browser first
+and only falls back to this, so calling it here would be a test that waits five
+minutes for a browser nobody is looking at.
 """
 
 import gzip
 import json
+import threading
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import pytest
@@ -67,7 +73,7 @@ def wire(monkeypatch, *, config=None, device=None, polls=None, exchange=None):
 
 def test_login_saves_a_token_and_reports_the_account(monkeypatch, capsys):
     wire(monkeypatch)
-    assert hosted.login() == 0
+    assert hosted.deviceLogin() == 0
 
     out = capsys.readouterr().out
     assert "ABCD-1234" in out            # the code the user must type
@@ -82,7 +88,7 @@ def test_saved_credentials_are_owner_only(monkeypatch):
     import stat
 
     wire(monkeypatch)
-    hosted.login()
+    hosted.deviceLogin()
     mode = stat.S_IMODE(os.stat(hosted.CREDENTIALS).st_mode)
     assert mode == 0o600, f"credentials are {oct(mode)}, should be 0600"
 
@@ -93,13 +99,13 @@ def test_pending_then_approved(monkeypatch):
         {"error": "authorization_pending"},
         {"access_token": "gho_test"},
     ])
-    assert hosted.login() == 0
+    assert hosted.deviceLogin() == 0
     assert hosted.savedToken() == "tony_tok"
 
 
 def test_slow_down_backs_off_and_still_completes(monkeypatch):
     wire(monkeypatch, polls=[{"error": "slow_down"}, {"access_token": "gho_test"}])
-    assert hosted.login() == 0
+    assert hosted.deviceLogin() == 0
 
 
 def test_a_dropped_poll_does_not_lose_the_login(monkeypatch):
@@ -107,7 +113,7 @@ def test_a_dropped_poll_does_not_lose_the_login(monkeypatch):
         httpx.ConnectError("network blip"),
         {"access_token": "gho_test"},
     ])
-    assert hosted.login() == 0
+    assert hosted.deviceLogin() == 0
     assert hosted.savedToken() == "tony_tok"
 
 
@@ -119,7 +125,7 @@ def test_device_flow_disabled_explains_the_switch(monkeypatch, capsys):
         "error": "device_flow_disabled",
         "error_description": "Device Flow has not been enabled",
     })
-    assert hosted.login() == 1
+    assert hosted.deviceLogin() == 1
     err = capsys.readouterr().err
     assert "Device flow" in err
     assert hosted.savedToken() is None
@@ -127,13 +133,13 @@ def test_device_flow_disabled_explains_the_switch(monkeypatch, capsys):
 
 def test_site_without_a_github_app_says_so(monkeypatch, capsys):
     wire(monkeypatch, config={"githubClientId": ""})
-    assert hosted.login() == 1
+    assert hosted.deviceLogin() == 1
     assert "no GitHub app configured" in capsys.readouterr().err
 
 
 def test_expired_code_tells_you_to_retry(monkeypatch, capsys):
     wire(monkeypatch, polls=[{"error": "expired_token"}])
-    assert hosted.login() == 1
+    assert hosted.deviceLogin() == 1
     assert "expired" in capsys.readouterr().err
     assert hosted.savedToken() is None
 
@@ -142,7 +148,7 @@ def test_access_denied_is_reported_not_retried(monkeypatch, capsys):
     wire(monkeypatch, polls=[
         {"error": "access_denied", "error_description": "The user cancelled"},
     ])
-    assert hosted.login() == 1
+    assert hosted.deviceLogin() == 1
     assert "cancelled" in capsys.readouterr().err
 
 
@@ -151,13 +157,13 @@ def test_unreachable_site_fails_before_asking_for_a_code(monkeypatch, capsys):
         hosted.httpx, "get",
         lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("refused")),
     )
-    assert hosted.login() == 1
+    assert hosted.deviceLogin() == 1
     assert "could not reach" in capsys.readouterr().err
 
 
 def test_site_rejecting_the_exchange_saves_nothing(monkeypatch, capsys):
     wire(monkeypatch, exchange=FakeResponse({}, status=401))
-    assert hosted.login() == 1
+    assert hosted.deviceLogin() == 1
     assert "rejected" in capsys.readouterr().err
     assert hosted.savedToken() is None
 
@@ -179,10 +185,10 @@ def test_tony_api_url_overrides_the_default(monkeypatch):
 
 def test_whoami_before_and_after(monkeypatch, capsys):
     assert hosted.whoami() == 1
-    assert "not logged in" in capsys.readouterr().out
+    assert "not signed in" in capsys.readouterr().out
 
     wire(monkeypatch)
-    hosted.login()
+    hosted.deviceLogin()
     capsys.readouterr()
 
     assert hosted.whoami() == 0
@@ -191,7 +197,7 @@ def test_whoami_before_and_after(monkeypatch, capsys):
 
 def test_logout_revokes_server_side_then_forgets_locally(monkeypatch, capsys):
     wire(monkeypatch)
-    hosted.login()
+    hosted.deviceLogin()
 
     revoked = {}
 
@@ -210,7 +216,7 @@ def test_logout_revokes_server_side_then_forgets_locally(monkeypatch, capsys):
 
 def test_logout_still_clears_locally_when_the_site_is_down(monkeypatch, capsys):
     wire(monkeypatch)
-    hosted.login()
+    hosted.deviceLogin()
     monkeypatch.setattr(
         hosted.httpx, "post",
         lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("down")),
@@ -236,7 +242,7 @@ def test_publish_without_login_is_refused_even_with_the_default_site(monkeypatch
 
 def test_publish_uploads_and_returns_a_clean_link(monkeypatch, capsys):
     wire(monkeypatch)
-    hosted.login()
+    hosted.deviceLogin()
     sent = {}
 
     def post(url, **kwargs):
@@ -258,3 +264,90 @@ def test_publish_uploads_and_returns_a_clean_link(monkeypatch, capsys):
     assert sent["type"] == "application/gzip"
     assert json.loads(gzip.decompress(sent["body"])) == {"v": 1, "secret": "source code"}
     assert "abc123" in capsys.readouterr().err
+
+
+# --- the browser flow ------------------------------------------------------
+#
+# The loopback listener is reachable by any page the user's browser happens to
+# be on, so what it refuses matters as much as what it accepts.
+
+class Listener:
+    """A real `browserLogin` server, driven by real requests on a real port.
+
+    The fake browser is also the signal that the port is up: `browserLogin`
+    only opens one once it is listening, so the event it sets is exactly the
+    moment a request can be sent. Polling with `time.sleep` would not work here
+    — the fixture above no-ops it for the whole process.
+    """
+
+    def __init__(self, monkeypatch, exchange):
+        self.opened = []
+        self.listening = threading.Event()
+
+        def open(url):
+            self.opened.append(url)
+            self.listening.set()
+            return True
+
+        monkeypatch.setattr(hosted.webbrowser, "open", open)
+        monkeypatch.setattr(hosted, "exchangeCliCode", exchange)
+
+    def run(self):
+        """Start the login and wait until it is listening."""
+        self.result = {}
+
+        def login():
+            self.result["code"] = hosted.browserLogin()
+
+        # A daemon thread so a login left waiting can never hold the suite open
+        # for the full five-minute timeout.
+        self.thread = threading.Thread(target=login, daemon=True)
+        self.thread.start()
+        assert self.listening.wait(10), "browserLogin never opened a browser"
+
+        params = parse_qs(urlparse(self.opened[0]).query)
+        self.port = params["cli"][0]
+        self.state = params["state"][0]
+        return self
+
+    def visit(self, **params):
+        url = f"http://127.0.0.1:{self.port}/?" + urlencode(params)
+        try:
+            self.response = httpx.get(url, follow_redirects=False, timeout=5)
+        except httpx.HTTPError:
+            self.response = None
+        self.thread.join(timeout=10)
+        return self.result.get("code")
+
+
+def test_the_browser_flow_saves_the_token_it_is_handed(monkeypatch, capsys):
+    listener = Listener(monkeypatch, lambda code: {"token": "tok", "login": "octocat"}).run()
+    assert listener.visit(code="c0de", state=listener.state) == 0
+    assert hosted.savedToken() == "tok"
+    # The browser is sent back to the site to be told it worked, named.
+    assert listener.response.status_code == 302
+    assert listener.response.headers["Location"].endswith("/cli/done?as=octocat")
+
+
+def test_a_request_without_the_nonce_is_refused(monkeypatch):
+    """Any page the user is browsing can hit this port. The nonce is the wall."""
+    called = []
+    listener = Listener(monkeypatch, lambda code: called.append(code) or {"token": "t"}).run()
+    listener.visit(code="c0de", state="not-the-state")
+    assert called == [], "a code arrived with the wrong nonce and was still spent"
+    assert hosted.savedToken() is None
+    # The real browser never came, so the login is still waiting — end it.
+    listener.visit(code="c0de", state=listener.state)
+
+
+def test_a_failed_exchange_is_reported_not_saved(monkeypatch, capsys):
+    listener = Listener(monkeypatch, lambda code: {"error": "the site rejected it."}).run()
+    assert listener.visit(code="c0de", state=listener.state) == 1
+    assert hosted.savedToken() is None
+    assert "the site rejected it." in capsys.readouterr().err
+
+
+def test_no_browser_asks_the_caller_to_fall_back(monkeypatch):
+    """A headless box must land on the device flow, not on a five-minute wait."""
+    monkeypatch.setattr(hosted.webbrowser, "open", lambda url: False)
+    assert hosted.browserLogin() == hosted.NO_BROWSER

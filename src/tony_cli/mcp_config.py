@@ -14,6 +14,8 @@ import os
 import shutil
 import sys
 
+from tony_cli import hosted
+
 # The command a host will run. `tony` from PATH when tony was installed as a
 # tool, and the absolute path to this interpreter's tony otherwise — a host
 # started from a GUI does not inherit the shell's PATH, and "tony" alone is the
@@ -42,6 +44,9 @@ CODEX = home(".codex", "config.toml")
 
 HOSTS = list(JSON_HOSTS) + ["codex"]
 
+# What each host calls itself, for output someone has to read.
+LABELS = {"claude": "Claude Code", "cursor": "Cursor", "amp": "Amp", "codex": "Codex"}
+
 
 def readJson(path):
     """The file's contents as a dict, or {} if it is absent or unreadable."""
@@ -61,7 +66,7 @@ def writeJson(path, body):
 
 
 def installJson(path, keys, exe):
-    """Add tony to one JSON host's server map. Returns a status string.
+    """Add tony to one JSON host's server map. Returns (state, detail).
 
     `keys` is the path to the map — a single key for every host so far, but
     Amp's is a literal dotted name rather than a nesting, so it is a list to
@@ -72,22 +77,24 @@ def installJson(path, keys, exe):
     for key in keys[:-1]:
         parent = parent.setdefault(key, {})
         if not isinstance(parent, dict):
-            return f"skipped — {path} has a {keys} that is not an object"
+            return "failed", f"{path} has a {key} that is not an object"
 
     servers = parent.setdefault(keys[-1], {})
     if not isinstance(servers, dict):
-        return f"skipped — {path} has a {keys[-1]} that is not an object"
+        return "failed", f"{path} has a {keys[-1]} that is not an object"
 
     entry = {"command": exe, "args": ["mcp"]}
     if servers.get("tony") == entry:
-        return f"already registered in {path}"
+        return "already", f"already connected  ({path})"
     servers["tony"] = entry
     writeJson(path, body)
-    return f"registered in {path}"
+    return "wrote", f"connected  ({path})"
 
 
 def installCodex(exe):
     """Add tony to Codex's TOML config, appending rather than reformatting.
+
+    Returns (state, detail), like `installJson`.
 
     Codex's file is hand-edited TOML with comments in it. Parsing and re-emitting
     would work and would also silently strip every one of those comments, so the
@@ -102,18 +109,24 @@ def installCodex(exe):
         existing = ""
 
     if "[mcp_servers.tony]" in existing:
-        return f"already registered in {CODEX}"
+        return "already", f"already connected  ({CODEX})"
 
     os.makedirs(os.path.dirname(CODEX), exist_ok=True)
     separator = "" if not existing or existing.endswith("\n\n") else \
         "\n" if existing.endswith("\n") else "\n\n"
     with open(CODEX, "a", encoding="utf-8") as fh:
         fh.write(separator + table)
-    return f"registered in {CODEX}"
+    return "wrote", f"connected  ({CODEX})"
 
 
 def install(argv=None):
-    """`tony install [host ...]` — register the MCP server with agent harnesses."""
+    """`tony install [host ...]` — register the MCP server, then say what is next.
+
+    This is the whole of setup for most people, so it does not stop at writing
+    files. Someone who has just run it does not know that an agent reads its
+    tool list only at startup, or that publishing needs an account — and both
+    of those turn into "tony does not work" if nobody says them here.
+    """
     argv = argv or []
     wanted = [h for h in argv if not h.startswith("-")]
     unknown = [h for h in wanted if h not in HOSTS]
@@ -122,12 +135,14 @@ def install(argv=None):
               f"{', '.join(unknown)}. Known: {', '.join(HOSTS)}.", file=sys.stderr)
         return 2
 
-    # No host named means all of them. Registering a server a host never starts
-    # costs one unused entry; making someone name their harness costs them the
-    # command working at all.
+    # No host named means all of them. Registering with an agent that is not
+    # installed costs one unused entry in a file; making someone name their
+    # harness costs them the command working at all.
     targets = wanted or HOSTS
     exe = command()
 
+    print("\n  Connecting tony to your agents\n")
+    results = []
     for host in targets:
         try:
             if host == "codex":
@@ -136,9 +151,36 @@ def install(argv=None):
                 path, keys = JSON_HOSTS[host]
                 result = installJson(path, keys, exe)
         except OSError as e:
-            result = f"failed — {e}"
-        print(f"  {host:8} {result}")
+            result = ("failed", str(e))
+        results.append((host, result))
+        state, detail = result
+        mark = "x" if state == "failed" else "+"
+        print(f"    {mark} {LABELS[host]:<12} {detail}")
 
-    print("\ntony: restart any harness that was already running, then ask it to "
-          "review a branch.")
+    if all(state == "failed" for _, (state, _) in results):
+        print("\ntony: nothing could be registered. The paths above are where "
+              "each agent expects to find tony.", file=sys.stderr)
+        return 1
+
+    nextSteps(hosted.savedToken() is not None)
     return 0
+
+
+def nextSteps(signedIn):
+    """The two things that are not files, and are not optional."""
+    print("\n  Next\n")
+    print("    1.  Restart your agent.")
+    print("        It reads its list of tools once, when it starts — until then")
+    print("        it has never heard of tony.\n")
+
+    if signedIn:
+        print("    2.  Ask it to review something:\n")
+        print("            review this branch with tony\n")
+        print("        This machine is already signed in.")
+    else:
+        print("    2.  Sign in, so reviews have somewhere to go:\n")
+        print("            tony login\n")
+        print("        It opens a browser and tells you when the terminal is ready.")
+        print("        Then ask your agent:\n")
+        print("            review this branch with tony")
+    print(f"\n  Docs: {hosted.apiBase()}/docs\n")
