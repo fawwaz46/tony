@@ -198,10 +198,22 @@ SKIP_NAMES = {
 }
 SKIP_SUFFIXES = (".min.js", ".min.css", ".map", ".snap", ".lock")
 
+# Directories whose contents are built, not written. A project that keeps hand
+# written source in one of these loses annotations on it — the file is still
+# listed with its line counts, so nothing disappears, and the alternative is
+# every reviewer paying for a vendored dependency tree.
+SKIP_DIRS = (
+    "node_modules", "dist", "build", "out", ".next", ".nuxt", ".svelte-kit",
+    "vendor", "target", "__pycache__", ".venv", "venv", "coverage", ".terraform",
+)
+
 
 def isSkippable(path):
     """True for generated files that are not worth an annotation."""
-    name = (path or "").rsplit("/", 1)[-1]
+    parts = (path or "").split("/")
+    if any(part in SKIP_DIRS for part in parts[:-1]):
+        return True
+    name = parts[-1]
     return name in SKIP_NAMES or name.endswith(SKIP_SUFFIXES)
 
 

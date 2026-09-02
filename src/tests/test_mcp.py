@@ -215,3 +215,42 @@ def test_install_points_at_connect():
     from tony_cli.agent import main
 
     assert main(["install"]) == 2
+
+
+# --- what the agent is handed vs what the page is built from ---------------
+
+def test_generated_bodies_are_stripped_for_the_agent_only(tmp_path, monkeypatch):
+    """A lockfile costs the reviewer's context and earns no annotation. The
+    page still has to show it changed, with its real line counts."""
+    from tony_cli.source.local import splitDiffByFile, withoutGeneratedBodies
+
+    lock = "".join(f"+  \"dep-{n}\": \"1.0.{n}\",\n" for n in range(200))
+    diff = (
+        "diff --git a/src/app.ts b/src/app.ts\n"
+        "index 111..222 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n"
+        "@@ -1,2 +1,3 @@\n ctx\n+const x = 1;\n"
+        "diff --git a/package-lock.json b/package-lock.json\n"
+        "index 333..444 100644\n--- a/package-lock.json\n+++ b/package-lock.json\n"
+        f"@@ -1,1 +1,200 @@\n{lock}"
+    )
+
+    stripped = withoutGeneratedBodies(diff)
+    assert len(stripped) < len(diff) / 10
+    assert "const x = 1;" in stripped          # the real change survives
+    assert "dep-100" not in stripped           # the lockfile body does not
+    assert "package-lock.json" in stripped     # but the file is still named
+
+    # The page is laid out from the untouched diff, so counts stay right.
+    byPath = {f["path"]: f for f in splitDiffByFile(diff)}
+    assert byPath["package-lock.json"]["additions"] == 200
+
+
+def test_build_output_is_skippable_by_directory():
+    from tony_cli.layout import isSkippable
+
+    assert isSkippable("dist/bundle.js")
+    assert isSkippable("web/node_modules/pkg/index.js")
+    assert isSkippable("src/__pycache__/mod.pyc")
+    # A source file whose name merely contains one of them is not build output.
+    assert not isSkippable("src/distance.py")
+    assert not isSkippable("src/builder.ts")

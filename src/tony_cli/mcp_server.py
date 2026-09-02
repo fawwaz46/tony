@@ -31,7 +31,10 @@ except ImportError:  # mcp < 2
 from tony_cli import hosted
 from tony_cli.page import renderPage
 from tony_cli.payload import buildPayload, dumpPayload
-from tony_cli.source.local import FAILED, getDiff, resolveBase, resolveRepo, resolveRev, isDirty
+from tony_cli.source.local import (
+    FAILED, getDiff, isDirty, resolveBase, resolveRepo, resolveRev,
+    withoutGeneratedBodies,
+)
 
 # What `tony_start` established about the repo, held until `tony_publish` needs
 # it. The diff is the reason: an agent should not have to hand back a document
@@ -136,13 +139,17 @@ def startReview(path=None, range=None):
         "instructions": served["version"],
     }
 
+    # The session keeps the whole diff, because the page is laid out against
+    # it and its file counts have to be right. What the agent is handed has the
+    # generated bodies removed — it is not going to annotate a lockfile, and
+    # every line of one comes out of its context window.
     return (
         f"sessionId: {sid}\n"
         f"repository: {os.path.basename(root)} at {root}\n"
         f"range: {base}...{head}\n\n"
         f"{served['document']}\n\n"
         "--- THE DIFF ---\n\n"
-        f"{diff}"
+        f"{withoutGeneratedBodies(diff)}"
     )
 
 

@@ -3,6 +3,8 @@ import os
 import re
 import subprocess
 
+from tony_cli.layout import isSkippable
+
 # directories never worth reading — vendored code, build output, vcs internals
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
@@ -39,6 +41,36 @@ def getDiff(repoPath: str, base=None, head="HEAD") -> str:
     if result.returncode != 0:
         return f"{FAILED}{result.stderr}"
     return result.stdout
+
+
+def withoutGeneratedBodies(diff: str) -> str:
+    """The same diff with generated files reduced to their headers.
+
+    For the agent only. A lockfile is the largest thing in most diffs and the
+    least worth reading: nobody annotates it, and under agent-native every line
+    of it is spent out of the reviewer's own context window — one 400-line
+    `package-lock.json` costs more than the change it accompanies.
+
+    The page is built from the unstripped diff, so it still shows these files
+    with their real line counts. Stripping there instead would have reported
+    every lockfile as +0/-0.
+    """
+    if not diff.strip():
+        return diff
+
+    out = []
+    for chunk in re.split(r"^(?=diff --git )", diff, flags=re.MULTILINE):
+        if not chunk.strip():
+            continue
+        path = chunk.split("\n", 1)[0].split(" b/", 1)[-1].strip()
+        if not isSkippable(path):
+            out.append(chunk)
+            continue
+        # Everything before the first hunk: the `diff --git`, mode, index, and
+        # ---/+++ lines that `splitDiffByFile` reads to name and count the file.
+        head, sep, _ = chunk.partition("@@")
+        out.append(head if sep else chunk)
+    return "".join(out)
 
 def resolveRepo (repoPath: str) -> str :
     if not os.path.isdir(repoPath):
