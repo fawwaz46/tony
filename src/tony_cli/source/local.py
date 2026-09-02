@@ -20,11 +20,21 @@ MAX_RESULTS = 200
 FAILED = "getDiff failed: "
 
 
-def getDiff(repoPath: str, base=None, head="HEAD") -> str:
+def getDiff(repoPath: str, base=None, head="HEAD", wholeFunctions=False) -> str:
     """The diff as text, or a message starting with FAILED.
 
     The model is one of the callers and reads this as prose, so a failure has
     to stay human-readable rather than raise.
+
+    `wholeFunctions` adds `-W`, which grows each hunk to the whole function it
+    sits in. That is what an agent otherwise opens the file for — it cannot say
+    what a changed line does without seeing the function around it — and the
+    function is a fraction of the file. On tony's own history it costs about a
+    third more diff and removes roughly twice that in reads, each of which was
+    also a turn that re-sent everything before it.
+
+    Off for the page, which is laid out against the plain diff: the extra
+    context lines would be rendered as if someone had asked to see them.
     """
     try:
         root = resolveRepo(repoPath)
@@ -33,7 +43,7 @@ def getDiff(repoPath: str, base=None, head="HEAD") -> str:
         return f"{FAILED}{e}"
 
     result = subprocess.run(
-        ["git", "diff", f"{base}...{head}"],
+        ["git", "diff"] + (["-W"] if wholeFunctions else []) + [f"{base}...{head}"],
         cwd=root,
         capture_output=True, text=True,
     )

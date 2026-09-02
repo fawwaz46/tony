@@ -139,17 +139,22 @@ def startReview(path=None, range=None):
         "instructions": served["version"],
     }
 
-    # The session keeps the whole diff, because the page is laid out against
-    # it and its file counts have to be right. What the agent is handed has the
-    # generated bodies removed — it is not going to annotate a lockfile, and
-    # every line of one comes out of its context window.
+    # What the agent reads is not what the page is built from. It gets each
+    # hunk grown to its enclosing function, which is the thing it would
+    # otherwise open the file to see, and it gets generated files without their
+    # bodies. Both trade a larger single tool result for far fewer file reads —
+    # and every avoided read was also a turn that re-sent the whole diff again.
+    forAgent = getDiff(root, base, head, wholeFunctions=True)
+    if forAgent.startswith(FAILED):
+        forAgent = diff
+
     return (
         f"sessionId: {sid}\n"
         f"repository: {os.path.basename(root)} at {root}\n"
         f"range: {base}...{head}\n\n"
         f"{served['document']}\n\n"
         "--- THE DIFF ---\n\n"
-        f"{withoutGeneratedBodies(diff)}"
+        f"{withoutGeneratedBodies(forAgent)}"
     )
 
 

@@ -254,3 +254,34 @@ def test_build_output_is_skippable_by_directory():
     # A source file whose name merely contains one of them is not build output.
     assert not isSkippable("src/distance.py")
     assert not isSkippable("src/builder.ts")
+
+
+def test_the_agent_gets_whole_functions_without_moving_any_line(tmp_path, monkeypatch):
+    """`-W` grows each hunk to its enclosing function — the thing an agent
+    opens the file for. It must not move what counts as a changed line, or
+    every annotation anchor and the coverage measure shift with it."""
+    from tony_cli.layout import changedRuns
+    from tony_cli.source.local import getDiff, splitDiffByFile
+
+    # The changed line sits far enough into the function that git's default
+    # three lines of context cannot reach the `def` — which is the whole case
+    # this exists for, and what a short fixture would hide.
+    body = "\n".join(f"    step{n} = {n}" for n in range(12))
+    repo = makeRepo(tmp_path)
+    (repo / "m.py").write_text(f"def outer():\n{body}\n    return step11\n")
+    subprocess.run(["git", "-C", str(repo), "add", "m.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "c2"], check=True)
+    (repo / "m.py").write_text(
+        f"def outer():\n{body.replace('step11 = 11', 'step11 = 99')}\n    return step11\n")
+    subprocess.run(["git", "-C", str(repo), "commit", "-aqm", "c3"], check=True)
+
+    plain = getDiff(str(repo), "HEAD~1", "HEAD")
+    wide = getDiff(str(repo), "HEAD~1", "HEAD", wholeFunctions=True)
+
+    # `def outer():` also appears in git's @@ header as a funcname hint, so the
+    # test is whether the function's earlier lines arrive as context.
+    assert "step0 = 0" not in plain         # the hunk alone stops well short
+    assert "step0 = 0" in wide              # -W reaches back to the whole function
+
+    runs = lambda d: changedRuns(splitDiffByFile(d)[0]["body"])
+    assert runs(plain) == runs(wide)
