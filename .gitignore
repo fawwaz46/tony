@@ -20,3 +20,7 @@ web/dist/
 web/.astro/
 dist/
 build/
+
+# `vercel deploy` from the repo root leaves one of these behind; the linked
+# project lives in web/, which is already ignored above.
+.vercel/
