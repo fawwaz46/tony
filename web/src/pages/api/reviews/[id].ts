@@ -10,6 +10,7 @@ import type { APIRoute } from "astro";
 import { del, get } from "@vercel/blob";
 import { gunzip, isGzip } from "../../../server/compress";
 import { open } from "../../../server/crypto";
+import { blobToken } from "../../../server/env";
 import {
   SESSION_COOKIE, fail, migrate, sql, userForSession, userForToken, withDatabase,
 } from "../../../server/db";
@@ -40,7 +41,7 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
     const rows = await sql`SELECT blob_path FROM reviews WHERE id = ${params.id}`;
     if (!rows.length) return fail(404, "not found");
 
-    const blob = await get(rows[0].blob_path, { access: "private" });
+    const blob = await get(rows[0].blob_path, { access: "private", ...blobToken() });
     if (!blob || blob.statusCode !== 200) return fail(404, "not found");
 
     // Blobs written before compression are plain JSON under the same
@@ -74,7 +75,7 @@ export const DELETE: APIRoute = async ({ params, request, cookies }) => {
     if (Number(rows[0].user_id) !== user.id) return fail(403, "not yours to delete");
 
     // `del` addresses the object by pathname and takes no access option.
-    await del(rows[0].blob_path).catch(() => {});
+    await del(rows[0].blob_path, blobToken()).catch(() => {});
     await sql`DELETE FROM reviews WHERE id = ${params.id}`;
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },

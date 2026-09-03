@@ -14,6 +14,7 @@ import { put } from "@vercel/blob";
 import { TooLarge, gunzip, gzip, isGzip } from "../../server/compress";
 import { encryptionConfigured, seal } from "../../server/crypto";
 import { fail, migrate, sql, userForToken, withDatabase } from "../../server/db";
+import { blobToken } from "../../server/env";
 import { capped } from "../../server/safe";
 
 export const prerender = false;
@@ -113,6 +114,7 @@ export const POST: APIRoute = async ({ request }) => {
       access: "private",
       contentType: "application/octet-stream",
       addRandomSuffix: true,
+      ...blobToken(),
     });
 
     await sql`
