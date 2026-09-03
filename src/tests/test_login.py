@@ -33,9 +33,10 @@ def home(tmp_path, monkeypatch):
 
 
 class FakeResponse:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, headers=None):
         self._payload = payload
         self.status_code = status
+        self.headers = headers or {}
 
     def json(self):
         return self._payload
@@ -371,3 +372,38 @@ def test_an_upload_failure_with_no_body_still_reports_the_status(monkeypatch):
     monkeypatch.setattr(hosted, "savedToken", lambda: "tok")
     monkeypatch.setattr(hosted.httpx, "post", lambda *a, **k: FakeResponse("nope", status=502))
     assert hosted.publish("{}")[1] == "upload failed (502)."
+
+
+# --- a site that redirects --------------------------------------------------
+
+def test_a_www_redirect_does_not_break_the_client(monkeypatch):
+    """Pointing a domain at www is a dashboard setting, not an outage. It was
+    one: httpx does not follow redirects, so every call returned a bare 308."""
+    seen = []
+
+    def get(url, **kwargs):
+        seen.append(url)
+        if url.startswith("https://site.test"):
+            return FakeResponse(None, status=308,
+                                headers={"location": url.replace("site.test", "www.site.test")})
+        return FakeResponse({"version": "v1", "document": "D"})
+
+    monkeypatch.setattr(hosted.httpx, "get", get)
+    saved, problem = hosted.fetchInstructions()
+    assert problem is None and saved["version"] == "v1"
+    assert seen[-1].startswith("https://www.site.test")
+
+
+def test_a_redirect_off_the_site_does_not_carry_the_token(monkeypatch):
+    """Following anywhere would hand a stranger's server a bearer token."""
+    seen = []
+
+    def post(url, **kwargs):
+        seen.append(url)
+        return FakeResponse(None, status=308, headers={"location": "https://evil.test/api/reviews"})
+
+    monkeypatch.setattr(hosted, "savedToken", lambda: "tok")
+    monkeypatch.setattr(hosted.httpx, "post", post)
+    url, problem = hosted.publish("{}")
+    assert url is None and "308" in problem
+    assert not any("evil.test" in u for u in seen)

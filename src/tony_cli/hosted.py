@@ -23,7 +23,7 @@ import sys
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 import httpx
 
@@ -55,6 +55,44 @@ def asJson(response):
 def apiBase():
     """Where the tony site lives."""
     return (os.environ.get("TONY_API_URL") or DEFAULT_API_URL).rstrip("/")
+
+
+def sameSite(a, b):
+    """True when two URLs differ only by a `www.` prefix or a subdomain of one site.
+
+    The test for whether a redirect may carry the bearer token with it. A site
+    that redirects its apex to `www` — or the reverse — is the ordinary case and
+    must not break publishing; a redirect to anywhere else is a request to hand
+    someone else's server a credential, and gets refused.
+    """
+    try:
+        first, second = urlparse(a), urlparse(b)
+    except ValueError:
+        return False
+    if first.scheme != second.scheme:
+        return False
+    bare = lambda host: (host or "").lower().removeprefix("www.")
+    return bare(first.netloc) == bare(second.netloc)
+
+
+def follow(request, url, **kwargs):
+    """Make a request, following one same-site redirect by hand.
+
+    `httpx` does not follow redirects unless asked, and asking it to would let
+    a redirect to another host carry the `Authorization` header along with it.
+    This follows exactly the hop that is safe — the same site under a different
+    hostname — which is the one every apex-to-www configuration produces, and
+    the one that otherwise turned a domain setting into "tony is down".
+    """
+    resp = request(url, **kwargs)
+    if resp.status_code not in (301, 302, 307, 308):
+        return resp
+    target = resp.headers.get("location") or ""
+    if not target.startswith("http"):
+        target = urljoin(url, target)
+    if not sameSite(url, target):
+        return resp
+    return request(target, **kwargs)
 
 
 # --- credentials -----------------------------------------------------------
@@ -228,7 +266,7 @@ def exchangeCliCode(code):
     said everything worked.
     """
     try:
-        resp = httpx.post(f"{apiBase()}/api/auth/cli", json={"code": code}, timeout=15)
+        resp = follow(httpx.post, f"{apiBase()}/api/auth/cli", json={"code": code}, timeout=15)
     except httpx.HTTPError as e:
         return {"error": f"approved, but could not reach {apiBase()}: {e}"}
 
@@ -251,7 +289,7 @@ def deviceLogin():
     # The GitHub OAuth client id is public by design; the server owns it so the
     # CLI never has to ship one.
     try:
-        config = asJson(httpx.get(f"{base}/api/config", timeout=10)) or {}
+        config = asJson(follow(httpx.get, f"{base}/api/config", timeout=10)) or {}
         clientId = config.get("githubClientId") or ""
     except Exception as e:
         print(f"tony: could not reach {base}: {e}", file=sys.stderr)
@@ -333,7 +371,8 @@ def deviceLogin():
         return 1
 
     try:
-        exchanged = httpx.post(
+        exchanged = follow(
+            httpx.post,
             f"{base}/api/auth/github",
             json={"accessToken": githubToken},
             timeout=15,
@@ -380,7 +419,8 @@ def logout():
     token = savedToken()
     if token and apiBase():
         try:
-            httpx.post(
+            follow(
+                httpx.post,
                 f"{apiBase()}/api/auth/logout",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=10,
@@ -416,7 +456,8 @@ def publish(payloadJson, repo="", rangeLabel=""):
     # request. `application/gzip` rather than `Content-Encoding`, so no proxy
     # decides to helpfully inflate it on the way.
     try:
-        resp = httpx.post(
+        resp = follow(
+            httpx.post,
             f"{base}/api/reviews",
             content=gzip.compress(payloadJson.encode("utf-8")),
             headers={
@@ -524,7 +565,7 @@ def fetchInstructions():
     headers = {"If-None-Match": f'"{cached["version"]}"'} if cached else {}
 
     try:
-        resp = httpx.get(f"{base}/api/instructions", headers=headers, timeout=15)
+        resp = follow(httpx.get, f"{base}/api/instructions", headers=headers, timeout=15)
     except httpx.HTTPError as e:
         return None, f"could not reach {base}: {e}"
 
