@@ -17,7 +17,7 @@ const error = Astro.url.searchParams.get("error");
 
 <Shell
   title="tony"
-  description="A CLI that explains a git diff to whoever now owns it — annotated changes, blast radius, and steppable runtime walkthroughs."
+  description="Ask your coding agent to review a branch. tony turns it into a page: every change explained, the blast radius, and steppable runtime walkthroughs."
 >
   <section class="hero">
     <h1>Tired of reading diffs?<br />Try Tony.</h1>
@@ -105,72 +105,89 @@ const error = Astro.url.searchParams.get("error");
 
   <section class="sec">
     <p class="cap">[ using it ]</p>
-    <h2 class="big">How it works.</h2>
-    <div class="three two">
+    <h2 class="big">Set it up once. Then just ask.</h2>
+    <p class="body">
+      tony doesn't call a model. Your coding agent writes the review with the
+      subscription you already pay for — tony hands it the diff, holds it to a standard,
+      and turns the answer into a page you can send someone. There's no API key.
+    </p>
+    <div class="three">
       <div>
         <span class="n">[01]</span>
-        <h3>Add a key</h3>
-        <p style="margin-bottom:.75rem">
-          tony reviews with Claude, so it needs an Anthropic API key. No account, no
-          sign-up — the first run tells you where to get one and where to put it.
-        </p>
+        <h3>Install</h3>
+        <p style="margin-bottom:.75rem">Puts the <code>tony</code> command on your machine.</p>
         <div class="cmd">
-          <code><span class="p">$ </span>echo 'ANTHROPIC_API_KEY=sk-ant-...' &gt;&gt; ~/.tony/.env</code>
+          <code><span class="p">$ </span>curl -fsSL https://tony-cli.com/install.sh | sh</code>
         </div>
       </div>
       <div>
         <span class="n">[02]</span>
-        <h3>Review</h3>
+        <h3>Connect and sign in</h3>
         <p style="margin-bottom:.75rem">
-          Run it in any repo. tony reads the diff against your working tree, writes the
-          review, and opens it. The page is one self-contained file in <code>.tony/</code>
-          — it works offline, and nothing is uploaded.
+          Registers tony with Claude Code, Cursor, Amp, Codex — whichever you have — then
+          opens a browser once. <b>Restart your agent after</b>: it reads its list of
+          tools only at startup.
         </p>
-        <div class="cmd"><code><span class="p">$ </span>tony main...my-branch</code></div>
+        <div class="cmd"><code><span class="p">$ </span>tony connect &amp;&amp; tony login</code></div>
+      </div>
+      <div>
+        <span class="n">[03]</span>
+        <h3>Ask</h3>
+        <p style="margin-bottom:.75rem">
+          Not a command — say it however you would have anyway. The agent reads the
+          changed files, writes the review, and hands you back a link.
+        </p>
+        <div class="cmd"><code><span class="p">&gt; </span>review this branch with tony</code></div>
       </div>
     </div>
   </section>
 
   <section class="sec">
     <p class="cap">[ where your code goes ]</p>
-    <h2 class="big">Nowhere, mostly.</h2>
+    <h2 class="big">To your agent, and to us.</h2>
     <p class="body">
-      Reviews stay on your machine. The page is one self-contained file written into
-      <code>.tony/</code> in the repo you reviewed — it opens from disk, works offline,
-      and keeps working after you uninstall tony.
+      Your agent reads the diff and the changed files locally — that part never leaves
+      your machine, and it happens inside whatever tool you already trust with your repo.
     </p>
     <p class="body">
-      The one thing that leaves is the diff itself, which goes to Anthropic so Claude can
-      write the explanation. Nothing is uploaded here, and there is no account to make.
+      The finished review does get uploaded, because a link you can send someone is the
+      point. It carries the diff, the explanations, and short windows of source around
+      the lines a reader is sent to — never whole files, and never the path it sat at on
+      your disk. It's encrypted before it reaches storage, so a leak of the store reveals
+      nothing. <b>tony holds the key</b>, which means we can open a review and a court
+      order could too. If that's the wrong trade for a repo, don't publish that repo.
+      <a href="/privacy">The details</a>.
     </p>
   </section>
 
   <section class="sec">
     <p class="cap">[ commands ]</p>
     <h2 class="big">Everything it does.</h2>
+    <p class="body">
+      Reviewing isn't in this list, because it isn't a command any more — you ask your
+      agent. These are the things you run yourself, nearly all of them once.
+    </p>
     <div class="three">
       <div>
-        <h3>Review</h3>
-        <div class="cmd"><code><span class="p">$ </span>tony</code></div>
+        <h3>Setup</h3>
+        <div class="cmd"><code><span class="p">$ </span>tony connect</code></div>
         <p class="body">
-          The current repo, against its default branch. This is the whole product.
+          Connects tony to every agent it knows about. Name one — <code>claude</code>,
+          <code>cursor</code>, <code>amp</code>, <code>codex</code> — to do just that one.
         </p>
-        <div class="cmd"><code><span class="p">$ </span>tony main...my-branch</code></div>
-        <p class="body">A range, in git's own syntax.</p>
-        <div class="cmd"><code><span class="p">$ </span>tony my-branch</code></div>
-        <p class="body">Short for <code>my-branch...HEAD</code>.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony login</code></div>
+        <p class="body">
+          Opens a browser. The page tells you when your terminal is ready.
+        </p>
       </div>
       <div>
-        <h3>Options</h3>
-        <div class="cmd"><code><span class="p">$ </span>tony --no-open</code></div>
-        <p class="body">Write the page without opening a browser.</p>
-        <div class="cmd"><code><span class="p">$ </span>tony --stale</code></div>
-        <p class="body">
-          Review a branch that isn't checked out. Line numbers may not match, which is
-          why tony refuses by default.
-        </p>
-        <div class="cmd"><code><span class="p">$ </span>tony --replay</code></div>
-        <p class="body">Rebuild the last review's page without calling the API again.</p>
+        <h3>Account</h3>
+        <div class="cmd"><code><span class="p">$ </span>tony whoami</code></div>
+        <p class="body">Which account this machine is signed in as.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony unpublish &lt;id&gt;</code></div>
+        <p class="body">Deletes a published review. The id is printed when it's published.</p>
+        <div class="cmd"><code><span class="p">$ </span>tony logout</code></div>
+        <p class="body">Revokes this machine's token, then forgets it locally.</p>
       </div>
       <div>
         <h3>Housekeeping</h3>
@@ -179,9 +196,7 @@ const error = Astro.url.searchParams.get("error");
         <div class="cmd"><code><span class="p">$ </span>tony update</code></div>
         <p class="body">Upgrade, using whichever installer you used.</p>
         <div class="cmd"><code><span class="p">$ </span>tony uninstall</code></div>
-        <p class="body">
-          Removes tony, your key, and every saved review. It asks first.
-        </p>
+        <p class="body">Removes tony and everything it saved. It asks first.</p>
       </div>
     </div>
   </section>

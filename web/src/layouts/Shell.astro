@@ -47,6 +47,7 @@ const here = Astro.url.pathname + Astro.url.search;
                 {user.login}
               </span>
               <form method="POST" action="/api/auth/signout">
+                <input type="hidden" name="next" value="/" />
                 <button class="plain" type="submit">Sign out</button>
               </form>
             </>

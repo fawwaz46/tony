@@ -12,6 +12,7 @@
  * leads to a provider error page is worse than an absent button.
  */
 import Shell from "../layouts/Shell.astro";
+import { SESSION_COOKIE, userForSession } from "../server/db";
 import { configured } from "../server/providers";
 
 // Read at request time, not build time: this page's whole job is to act on its
@@ -20,6 +21,18 @@ export const prerender = false;
 
 const params = Astro.url.searchParams;
 const providers = configured();
+
+// Who this browser already is, if anyone. Without this the page offers to sign
+// you in while a session is already open, and the provider quietly reuses the
+// account you happen to be logged into there — so `tony login` on a shared or
+// second-account machine has no way to land anywhere else.
+// Failing closed keeps the page usable if the database is down.
+let current = null;
+try {
+  current = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
+} catch {
+  current = null;
+}
 
 // Validated the same way the start route validates them, so a malformed pair
 // is dropped here rather than silently producing a login that never returns.
@@ -63,6 +76,25 @@ const marks: Record<string, string> = {
     </p>
 
     {error && <p class="notice bad">{error}</p>}
+
+    {
+      current && (
+        <div class="whoami">
+          <p>
+            This browser is signed in as <b>{current.login}</b>. Continuing below signs
+            the {forCli ? "CLI" : "site"} in as them.
+          </p>
+          <form method="POST" action="/api/auth/signout">
+            <input type="hidden" name="next" value={Astro.url.pathname + Astro.url.search} />
+            <button class="btn quiet" type="submit">Use a different account</button>
+          </form>
+          <p class="fine">
+            If the provider signs you straight back in as the same person, sign out of it
+            too — tony only controls its own session.
+          </p>
+        </div>
+      )
+    }
 
     {
       providers.length === 0 ? (
