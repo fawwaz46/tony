@@ -47,7 +47,26 @@ THE REVIEW OBJECT
 
 ANNOTATIONS — these are the entire walkthrough. Everything the reader learns, they learn here.
 
-COVERAGE — this is the rule that matters most. Every hunk in the diff must be explained. Walk the diff hunk by hunk and account for all of it. If one hunk contains several distinct changes, write several annotations against it. Leaving a hunk unannotated is a failure, not concision. The only things you may skip are lockfiles, generated code, and binary assets. There should never be blocks of code that aren't annotated. The developer reading through needs everything to be annotated so that they could read end to end and understand. This is an alternative to reading code.
+COVERAGE — this is the rule that matters most, and `tony_publish` enforces it. Every block of changed code must be accounted for. Walk the diff block by block and account for all of it. If one hunk contains several distinct changes, write several annotations against it. Leaving a block unaccounted for is a failure, not concision. The developer reading through needs everything explained so they can read end to end and understand it. This is an alternative to reading the code.
+
+`tony_publish` computes which blocks of three or more changed lines nothing accounted for, and rejects the review naming each one. Lockfiles, build output and binary assets are removed before you ever see them, so they are not your problem.
+
+SKIPS — the one honest way past coverage.
+
+Some changed code genuinely needs no explanation: output regenerated from a source file you have already annotated, three hundred lines of the same mechanical rename, vendored code, a test fixture that is pure data. For those, say so and say why:
+
+{"skips": [
+  {"path": "api/schema_pb2.py", "line": 1,
+   "why": "Regenerated from schema.proto. The change that caused it is annotated in the .proto file."},
+  {"path": "src/legacy/handlers.ts", "line": 240,
+   "why": "312 lines of the same rename, `fetchUser` to `loadUser`. No behaviour changes."}
+]}
+
+A skip accounts for the block it is anchored in, exactly as an annotation does. `line` goes inside the block you are declining to explain.
+
+This is shown to the reader, in place, where the code is. That is the point of it — they can tell a block that was considered and passed over from one that was missed. So write a reason a person would accept.
+
+Do NOT use it to get past the gate. A skip on code that does something is a lie told to the one person relying on you, and it is visible on the page with your reason attached. If you are tempted to write "not relevant" or "straightforward", the annotation was the easier honest option.
 
 MIRRORED FILES — repositories often keep two copies of the same code: a sync and an async version of one module, a generated client beside its source, the same fix applied to several platform-specific copies. When two or more changed files receive substantively the same change, do NOT explain it twice.
 
@@ -111,12 +130,24 @@ WALKTHROUGHS — a steppable trace of what the code DOES at runtime.
 
 The reader has no working model of how this program executes. They cannot get one from reading the code, and a static picture of boxes and arrows will not give them one either. What builds it is following a single concrete scenario, one step at a time, watching state change.
 
-Write at most two. Zero is correct when the change has no runtime behaviour — a copy edit, a rename, a config bump. Never write one that merely restates the annotations.
+Write at most three, and never more than one of each kind below. Zero is correct when the change has no runtime behaviour — a copy edit, a rename, a config bump. Never write one that merely restates the annotations.
+
+There are two kinds, and `reach` says which:
+
+- `"reach": "changed"` — a flow the diff altered directly. Trace the scenario the change most affects. This is the one to write first, and usually the only one.
+- `"reach": "downstream"` — a flow the diff did NOT touch, which now behaves differently because it runs through something you listed in `impacts`. Nothing else in the review can say this. The annotations explain what changed; the impacts name the call sites it reaches; only this shows the reader a scenario somewhere else in the product that now goes differently, and where it diverges.
+
+Write a downstream walkthrough when you have an impact of kind "breaks" or "behavior-change" that sits inside a flow a person would recognise — a checkout, a nightly job, a login, an export. Trace that flow from its own trigger, through the impact site, to the place the outcome differs. Its `whatChanged` names the consequence for THAT flow, not for the diff.
+
+Do not write one for a "compatible" impact — there is nothing to show. Do not invent a flow to have one; if every impact is a lone utility call with no scenario around it, one walkthrough is the right answer.
+
+Both kinds cost the same to read and are traced the same way: follow the calls with your own tools, read every file you step through, and never guess a line range.
 
 Put them in the `walkthroughs` array:
 
 {"walkthroughs": [
   {
+    "reach": "changed",
     "title": "Resuming a crashed export",
     "trigger": "You run `export --resume` after the previous run died partway",
     "whatChanged": "Before this diff a resumed export started over from the first record instead of picking up where it stopped.",
@@ -133,7 +164,32 @@ Put them in the `walkthroughs` array:
   }
 ]}
 
+A downstream one, traced outward from an impact rather than from a hunk:
+
+{"walkthroughs": [
+  {
+    "reach": "downstream",
+    "title": "The nightly revenue rollup",
+    "trigger": "The 02:00 cron job runs and totals yesterday's captured charges",
+    "whatChanged": "Nothing in this job changed, but it counts charge rows — and retried payments no longer create a second row, so its totals drop against previous nights for the same real revenue.",
+    "steps": [
+      {"say": "The job selects every charge captured yesterday and counts the rows it gets back.",
+       "path": "jobs/revenue.py", "lines": [5, 11],
+       "state": {"rows": "1,204 -> 1,187"},
+       "phase": "same"},
+      {"say": "Those seventeen missing rows are the duplicate charges retries used to create, which the new idempotency key now prevents.",
+       "path": "billing/invoices.py", "lines": [84, 96],
+       "state": {"duplicates": "17 -> 0"},
+       "phase": "changed"},
+      {"say": "The dashboard shows the day as down on the previous one, though the same money was taken.",
+       "state": {"reported gross": "lower", "actual revenue": "unchanged"},
+       "phase": "same"}
+    ]
+  }
+]}
+
 FIELDS
+- `reach`: "changed" or "downstream", as above. Required.
 - `title`: at most six words, naming the scenario.
 - `trigger`: one sentence describing what the user or system does to start it. Concrete and physical — "you click X", "a link is pasted into Slack", "the page finishes loading" — never "the function is invoked".
 - `whatChanged`: ONE sentence naming what this diff altered about THIS flow specifically, written so it makes sense before the reader has stepped through anything. This is the reason the walkthrough exists — if you cannot write it, the walkthrough does not belong.

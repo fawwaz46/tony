@@ -125,7 +125,7 @@ def stepWindows(walkthroughs, repoPath):
     return out
 
 
-def laidOutFiles(diff, annotations, risks):
+def laidOutFiles(diff, annotations, risks, skips=()):
     """Files carrying resolved blocks instead of a raw diff body.
 
     The viewer receives rows with their line numbers already assigned and notes
@@ -133,7 +133,7 @@ def laidOutFiles(diff, annotations, risks):
     no line numbers. That is the whole point: one implementation of the
     deterministic layer, in Python, with the payload as the boundary.
     """
-    byPath = itemsByPath(annotations, risks)
+    byPath = itemsByPath(annotations, risks, skips)
     out = []
     for f in splitDiffByFile(diff):
         skip = f["binary"] or isSkippable(f["path"])
@@ -168,7 +168,8 @@ def buildPayload(data, diff, repoPath, rangeLabel=""):
     impacts = data.get("impacts") or []
     annotations = data.get("annotations") or []
     risks = data.get("risks") or []
-    files = laidOutFiles(diff, annotations, risks)
+    skips = data.get("skips") or []
+    files = laidOutFiles(diff, annotations, risks, skips)
 
     return {
         "v": VERSION,
@@ -183,6 +184,10 @@ def buildPayload(data, diff, repoPath, rangeLabel=""):
         },
         "annotations": annotations,
         "risks": risks,
+        # A run the review declined to explain, and why. Rendered where the
+        # code is, so the reader can tell a block that was considered and
+        # dismissed from one that was simply missed.
+        "skips": skips,
         "impacts": impacts,
         "impactWindows": impactWindows(impacts, repoPath),
         "walkthroughs": stepWindows(data.get("walkthroughs") or [], repoPath),

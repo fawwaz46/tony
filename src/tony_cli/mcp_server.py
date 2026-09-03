@@ -29,11 +29,12 @@ except ImportError:  # mcp < 2
     from mcp.server.fastmcp import FastMCP as Server
 
 from tony_cli import hosted
+from tony_cli.layout import isSkippable, itemsByPath, runCoverage
 from tony_cli.page import renderPage
 from tony_cli.payload import buildPayload, dumpPayload
 from tony_cli.source.local import (
     FAILED, getDiff, isDirty, resolveBase, resolveRepo, resolveRev,
-    withoutGeneratedBodies,
+    splitDiffByFile, withoutGeneratedBodies,
 )
 
 # What `tony_start` established about the repo, held until `tony_publish` needs
@@ -171,6 +172,15 @@ def publishReview(review, sessionId=None):
     if problems:
         return rejection(problems)
 
+    # Coverage last, because a review that fails the shape check has not been
+    # read closely enough for its gaps to mean anything yet.
+    gaps = coverageGaps(session["diff"], review)
+    if gaps:
+        session["attempts"] = session.get("attempts", 0) + 1
+        if session["attempts"] >= MAX_ATTEMPTS:
+            return exhausted(gaps)
+        return coverageRejection(gaps, session["attempts"])
+
     root, base, head = session["root"], session["base"], session["head"]
     rangeLabel = f"{base or 'default'}...{head}"
     payload = buildPayload(review, session["diff"], root, rangeLabel)
@@ -190,6 +200,81 @@ def publishReview(review, sessionId=None):
         f"Published: {url}\n\n"
         "Give the developer this URL. Do not paste the review into the "
         "conversation — the page is the deliverable."
+    )
+
+
+# --- coverage --------------------------------------------------------------
+
+# A run this short is a moved import, a whitespace fix, a bumped constant.
+# Demanding prose for it is how a gate manufactures padding, which is the one
+# thing the instructions spend the most words forbidding.
+MIN_RUN = 3
+
+# How many gaps to name before the list stops being something to act on.
+MAX_LISTED = 20
+
+# How many times one session may be rejected before tony stops asking. An agent
+# that cannot satisfy the gate in three attempts will not on the fourth, and
+# publishing the review anyway would defeat the point of having a gate.
+MAX_ATTEMPTS = 3
+
+
+def coverageGaps(diff, review):
+    """Runs of changed code that nothing in this review accounts for.
+
+    Returns [(path, start, end)]. A run is accounted for by an annotation that
+    explains it or by a skip that says why it needs no explaining — not by a
+    risk, which warns about code it assumes has already been explained.
+    """
+    byPath = itemsByPath(
+        review.get("annotations") or [],
+        review.get("risks") or [],
+        review.get("skips") or [],
+    )
+    gaps = []
+    for f in splitDiffByFile(diff):
+        if f["binary"] or isSkippable(f["path"]) or not f["body"]:
+            continue
+        _, missed = runCoverage(f["body"], byPath.get(f["path"], []))
+        for start, end, _ in missed:
+            if end - start + 1 >= MIN_RUN:
+                gaps.append((f["path"], start, end))
+    return gaps
+
+
+def coverageRejection(gaps, attempt):
+    """A refusal naming every block, because the reader has to go fix them."""
+    shown = gaps[:MAX_LISTED]
+    listed = "\n".join(
+        f"  {path}:{start}-{end}   ({end - start + 1} lines)" for path, start, end in shown
+    )
+    more = f"\n  ... and {len(gaps) - len(shown)} more" if len(gaps) > len(shown) else ""
+    left = MAX_ATTEMPTS - attempt
+    return (
+        f"tony: not published — {len(gaps)} block"
+        f"{'' if len(gaps) == 1 else 's'} of changed code that nothing explains.\n\n"
+        f"{listed}{more}\n\n"
+        "Every changed block needs one of two things: an annotation anchored "
+        "inside it, or\n"
+        "an entry in `skips` saying why it needs no explaining — generated "
+        "output, a mechanical\n"
+        "rename, vendored code. A skip is shown to the reader, so give a real "
+        "reason.\n\n"
+        "Do not pad. An annotation that restates the syntax is worse than a "
+        "skip that is honest.\n\n"
+        f"Then call tony_publish again with the same sessionId. "
+        f"{left} attempt{'' if left == 1 else 's'} left."
+    )
+
+
+def exhausted(gaps):
+    """Given up after MAX_ATTEMPTS. Say so to the human, do not publish."""
+    return (
+        f"tony: giving up after {MAX_ATTEMPTS} attempts — {len(gaps)} blocks of "
+        "changed code are still unexplained.\n\n"
+        "Nothing was published. Tell the developer which parts of the change "
+        "went unreviewed, and\n"
+        "that they can re-run tony on a narrower range."
     )
 
 
@@ -234,10 +319,18 @@ def validate(review):
         for i, note in enumerate(annotations):
             problems += annotationProblems(i, note)
 
-    for field in ("risks", "impacts", "walkthroughs"):
+    for field in ("risks", "impacts", "walkthroughs", "skips"):
         value = review.get(field)
         if value is not None and not isinstance(value, list):
             problems.append(f"`{field}` must be an array, or left out entirely.")
+
+    for i, skip in enumerate(review.get("skips") or []):
+        if not isinstance(skip, dict):
+            problems.append(f"skips[{i}] must be an object.")
+            continue
+        for field in ("path", "line", "why"):
+            if not skip.get(field) and skip.get(field) != 0:
+                problems.append(f"skips[{i}] has no `{field}`.")
     return problems
 
 

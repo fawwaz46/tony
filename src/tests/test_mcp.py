@@ -285,3 +285,110 @@ def test_the_agent_gets_whole_functions_without_moving_any_line(tmp_path, monkey
 
     runs = lambda d: changedRuns(splitDiffByFile(d)[0]["body"])
     assert runs(plain) == runs(wide)
+
+
+# --- the coverage gate -----------------------------------------------------
+#
+# The thing that replaced owning the loop. tony controls no model and no
+# harness, so what it refuses to publish is the only quality control it has.
+
+def changedRepo(tmp_path):
+    """A repo whose HEAD adds one 9-line block and one 40-line generated file."""
+    repo = makeRepo(tmp_path)
+    (repo / "a.py").write_text(
+        "x = 1\n" + "".join(f"def f{n}():\n    return {n}\n\n" for n in range(3)))
+    (repo / "gen_pb2.py").write_text("".join(f"FIELD_{n} = {n}\n" for n in range(40)))
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "c2"], check=True)
+    return repo
+
+
+def started(repo, monkeypatch):
+    monkeypatch.setattr(mcp_server.hosted, "savedToken", lambda: "t")
+    monkeypatch.setattr(mcp_server.hosted, "fetchInstructions",
+                        lambda: ({"version": "v1", "document": "D"}, None))
+    monkeypatch.setattr(mcp_server.hosted, "publish",
+                        lambda *a, **k: ("https://tony-cli.com/r/x", None))
+    out = startReview(str(repo), "HEAD~1...HEAD")
+    return out.split("sessionId: ", 1)[1].split("\n", 1)[0]
+
+
+def test_an_unexplained_block_is_refused_and_named(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview({"intent": "i", "annotations": []}, sid)
+    assert "not published" in out
+    assert "a.py:1-10" in out and "10 lines" in out
+    assert "gen_pb2.py:1-40" in out
+
+
+def test_a_skip_gets_a_block_past_the_gate(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview({
+        "intent": "i",
+        "annotations": [note(path="a.py", line=2, kind="added", now="defines three functions")],
+        "skips": [{"path": "gen_pb2.py", "line": 1, "why": "generated from schema.proto"}],
+    }, sid)
+    assert "Published:" in out
+
+
+def test_a_risk_is_not_an_explanation(tmp_path, monkeypatch):
+    """Otherwise "warn about it" is the cheapest way through the gate."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview({
+        "intent": "i", "annotations": [],
+        "risks": [{"path": "a.py", "line": 2, "text": "might break"}],
+        "skips": [{"path": "gen_pb2.py", "line": 1, "why": "generated"}],
+    }, sid)
+    assert "not published" in out and "a.py:1-10" in out
+
+
+def test_a_one_line_change_needs_no_prose(tmp_path, monkeypatch):
+    """A moved import or a bumped constant is not something to demand a
+    paragraph for — a gate that does manufactures the padding it forbids."""
+    repo = makeRepo(tmp_path)
+    (repo / "f.txt").write_text("one\ntwo\n")
+    subprocess.run(["git", "-C", str(repo), "commit", "-aqm", "c2"], check=True)
+    sid = started(repo, monkeypatch)
+    assert "Published:" in mcp_server.publishReview({"intent": "i", "annotations": []}, sid)
+
+
+def test_a_skip_needs_a_reason(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview({
+        "intent": "i", "annotations": [],
+        "skips": [{"path": "gen_pb2.py", "line": 1}],
+    }, sid)
+    assert "skips[0] has no `why`" in out
+
+
+def test_the_gate_gives_up_rather_than_publishing_anyway(tmp_path, monkeypatch):
+    """A retry budget, so a bad agent cannot loop against the endpoint — and
+    when it runs out, nothing is published. A bad review with a URL is worse
+    than no review, because only one of those gets read."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    empty = {"intent": "i", "annotations": []}
+    assert "2 attempts left" in mcp_server.publishReview(empty, sid)
+    assert "1 attempt left" in mcp_server.publishReview(empty, sid)
+    out = mcp_server.publishReview(empty, sid)
+    assert "giving up" in out and "Published" not in out
+
+
+def test_skips_reach_the_page_where_the_code_is(tmp_path, monkeypatch):
+    """A skip is only worth anything if the reader sees it — that is what
+    separates a block that was dismissed from one that was missed."""
+    published = {}
+    repo = changedRepo(tmp_path)
+    sid = started(repo, monkeypatch)
+    monkeypatch.setattr(mcp_server.hosted, "publish",
+                        lambda body, **kw: (published.update(json.loads(body)) or
+                                            ("https://tony-cli.com/r/x", None)))
+    mcp_server.publishReview({
+        "intent": "i",
+        "annotations": [note(path="a.py", line=2, kind="added", now="three functions")],
+        "skips": [{"path": "gen_pb2.py", "line": 1, "why": "generated from schema.proto"}],
+    }, sid)
+
+    assert published["skips"][0]["why"] == "generated from schema.proto"
+    gen = next(f for f in published["files"] if f["path"] == "gen_pb2.py")
+    assert any(b["k"] == "skip" for b in gen["blocks"])
+    assert not any(b["k"] == "gap" for b in gen["blocks"])

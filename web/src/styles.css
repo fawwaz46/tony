@@ -115,6 +115,17 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
   text-transform:uppercase;color:var(--accent);display:flex;align-items:center;
   gap:.6rem;flex-wrap:wrap}
 .ann.risk .t{color:var(--neg)}
+/* A skip is neither an explanation nor a gap, and must not look like either.
+   No accent — that means "changed code, here is what it does" — and not the
+   dashed gap treatment, which means nobody said anything. A plain surface: a
+   block that was looked at and deliberately passed over. */
+.ann.skip{background:var(--s1);border-color:var(--rule-2)}
+.ann.skip .t{color:var(--ink-4)}
+.ann.skip .n{color:var(--ink-3)}
+/* Marks a walkthrough of a flow the diff did not touch. Informational, so it
+   takes the info colour rather than the accent, which belongs to changed code. */
+.rch{margin-left:.75rem;color:var(--info);border:1px solid var(--info-line);
+  background:var(--info-bg);padding:.2em .55em;font-size:.58rem;letter-spacing:.08em}
 .ann .ln{font-size:.62rem;letter-spacing:.06em;color:var(--ink-4);text-transform:none}
 .ann .k{font-size:.58rem;letter-spacing:.1em;color:var(--ink-4)}
 .ann .n{margin:0;font-size:.85rem;line-height:1.55;color:var(--ink-2);max-width:64ch}

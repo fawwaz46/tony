@@ -95,11 +95,12 @@ def kindFor(claimed, span):
 def layout(body, items, gaps=True):
     """One file as ordered blocks: diff rows, with notes above the line they describe.
 
-    `items` are dicts of {"k": "note"|"risk", "n": index, "data": obj}, where
-    `n` indexes back into the payload's own annotations or risks array.
+    `items` are dicts of {"k": "note"|"risk"|"skip", "n": index, "data": obj},
+    where `n` indexes back into the payload's own annotations, risks or skips
+    array.
 
     Blocks are either {"k": "row", "cls", "g", "text"} or
-    {"k": "note"|"risk", "n", "span", "tag"}.
+    {"k": "note"|"risk"|"skip", "n", "span", "tag"}.
     """
     runs = changedRuns(body) if body else []
 
@@ -127,7 +128,7 @@ def layout(body, items, gaps=True):
     pending = {}
     covered = set()
     for item, span, claimed in resolved:
-        if span in runs:
+        if span in runs and item["k"] in COVERING:
             covered.add(span)
         alone = span in runs and perRun[span] == 1
         pending.setdefault(span[0] if alone else claimed, []).append(("note", item, span))
@@ -217,6 +218,14 @@ def isSkippable(path):
     return name in SKIP_NAMES or name.endswith(SKIP_SUFFIXES)
 
 
+# What can account for a run of changed code. An annotation explains it; a
+# skip says why it does not need explaining. A risk does neither — it warns
+# about code it assumes you have already had explained — so a run carrying
+# only a risk is still a run nobody explained. It used to satisfy coverage,
+# which made "note the danger" a way to pass without saying what the code did.
+COVERING = ("note", "skip")
+
+
 def runCoverage(body, items):
     """(total runs, unexplained runs) for one file.
 
@@ -226,6 +235,8 @@ def runCoverage(body, items):
     runs = changedRuns(body) if body else []
     covered = set()
     for item in items:
+        if item["k"] not in COVERING:
+            continue
         line = item["data"].get("line")
         claimed = int(line) if isinstance(line, (int, float)) else 0
         span = spanFor(claimed, runs) if runs else None
@@ -234,12 +245,15 @@ def runCoverage(body, items):
     return runs, [r for r in runs if r not in covered]
 
 
-def itemsByPath(annotations, risks):
-    """Annotations and risks grouped per file, keeping their index in the payload arrays."""
+def itemsByPath(annotations, risks, skips=()):
+    """Annotations, risks and skips per file, keeping their index in the payload."""
     byPath = {}
     for n, a in enumerate(annotations):
         byPath.setdefault(a.get("path"), []).append({"k": "note", "n": n, "data": a})
     for n, r in enumerate(risks):
         if r.get("path"):
             byPath.setdefault(r["path"], []).append({"k": "risk", "n": n, "data": r})
+    for n, s in enumerate(skips or ()):
+        if s.get("path"):
+            byPath.setdefault(s["path"], []).append({"k": "skip", "n": n, "data": s})
     return byPath

@@ -14,7 +14,7 @@
 
 export type Span = [start: number, end: number, hadDeletion: boolean];
 export type Row = { k: "row"; cls: "a" | "d" | "c" | "h"; g: number | null; text: string };
-export type NoteRef = { k: "note" | "risk"; n: number; span: Span | null; tag: string };
+export type NoteRef = { k: "note" | "risk" | "skip"; n: number; span: Span | null; tag: string };
 export type Gap = { k: "gap"; span: Span; tag: string };
 export type Block = Row | NoteRef | Gap;
 
@@ -35,6 +35,7 @@ export interface Payload {
   files: any[];
   annotations: any[];
   risks: any[];
+  skips?: any[];
   impacts: any[];
   coverage?: { changedLines: number; unexplainedLines: number };
   impactWindows: Record<string, Window>;
@@ -100,6 +101,21 @@ function renderGap(span: Span): string {
   return `<div class="gap"><span class="gl">${lineLabel(span)}</span><span class="gt">not explained</span></div>`;
 }
 
+/**
+ * A block the review declined to explain, and why.
+ *
+ * Rendered where the code is, not hidden, because its whole job is to let the
+ * reader tell a block that was considered and dismissed from one that was
+ * missed. A gap says "nobody explained this"; a skip says "here is why nobody
+ * needed to", and the reader is owed the difference.
+ */
+function renderSkip(item: any, span: Span | null): string {
+  return (
+    `<div class="ann skip"><p class="t">Not explained${lineLabel(span)}</p>` +
+    `<p class="n">${esc(item.why || "")}</p></div>`
+  );
+}
+
 function renderNote(item: any, kind: "note" | "risk", span: Span | null, tag: string): string {
   if (kind === "risk") {
     return `<div class="ann risk"><p class="t">Potential risk${lineLabel(span)}</p><p class="n">${esc(item.text)}</p></div>`;
@@ -134,7 +150,7 @@ function renderNote(item: any, kind: "note" | "risk", span: Span | null, tag: st
 
 // ---- file changes ---------------------------------------------------------
 
-function renderFiles(files: any[], annotations: any[], risks: any[]): string {
+function renderFiles(files: any[], annotations: any[], risks: any[], skips: any[]): string {
   return files
     .map((f, idx) => {
       const i = idx + 1;
@@ -155,6 +171,8 @@ function renderFiles(files: any[], annotations: any[], risks: any[]): string {
               ? `<div class="l ${cls(b.cls)}"><span class="g">${b.g == null ? "" : num(b.g)}</span>${esc(b.text) || "&nbsp;"}</div>`
               : b.k === "gap"
               ? renderGap(b.span)
+              : b.k === "skip"
+              ? renderSkip(safeNote(num(b.n), skips), b.span)
               : renderNote(
                   safeNote(num(b.n), b.k === "risk" ? risks : annotations),
                   b.k === "risk" ? "risk" : "note",
@@ -460,6 +478,14 @@ function renderWalkthroughs(walkthroughs: any[]): string {
         const changed = w.whatChanged
           ? `<p class="wchg"><span class="tl">What changed</span> ${esc(w.whatChanged)}</p>`
           : "";
+        // A downstream trace is a flow this diff never touched, which now runs
+        // differently because it passes through something the diff reached.
+        // The reader has to be told that up front — otherwise they hunt the
+        // steps for an edit that is not in any of them.
+        const reach =
+          w.reach === "downstream"
+            ? `<span class="rch">not changed by this diff — reached by it</span>`
+            : "";
 
         const dots = steps
           .map((st, i) => {
@@ -483,7 +509,7 @@ function renderWalkthroughs(walkthroughs: any[]): string {
         return `
 <section class="wt" data-w="${idx}" data-n="${steps.length}">
   <header class="wth">
-    <p class="cap">[ walkthrough ${pad2(idx + 1)}${ofN} ]</p>
+    <p class="cap">[ walkthrough ${pad2(idx + 1)}${ofN} ]${reach}</p>
     <h3>${esc(w.title || "Walkthrough")}</h3>
     <p class="trig"><span class="tl">Starts when</span> ${esc(w.trigger)}</p>
     ${changed}
@@ -508,6 +534,7 @@ export function renderReview(root: HTMLElement, review: Payload): void {
   const files = review.files ?? [];
   const annotations = review.annotations ?? [];
   const risks = review.risks ?? [];
+  const skips = review.skips ?? [];
   const impacts = (review.impacts ?? []).filter((i: any) => i.path);
   const walkthroughs = review.walkthroughs ?? [];
   const windows = review.impactWindows ?? {};
@@ -554,7 +581,7 @@ ${looseHtml}
 <div id="pane-files">
   <div class="flayout">
     ${renderTree(files)}
-    <div class="fmain">${renderFiles(files, annotations, risks)}</div>
+    <div class="fmain">${renderFiles(files, annotations, risks, skips)}</div>
   </div>
 </div>
 <div id="pane-blast" hidden>

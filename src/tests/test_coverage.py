@@ -101,11 +101,25 @@ def test_replacements_count_as_runs_too():
 
 
 def test_a_risk_alone_does_not_explain_a_run():
-    """Risks sit behind a toggle and are not the explanation. Only notes cover."""
+    """Risks sit behind a toggle and are not the explanation. Only notes cover.
+
+    This used to pass with `missed == []`, which made "warn about it" a way to
+    satisfy coverage without ever saying what the code did — and once coverage
+    became a publish gate, the cheapest way through it.
+    """
     body = hunk(250, 29)
     risk = {"k": "risk", "n": 0, "data": {"line": 263}}
     runs, missed = runCoverage(body, [risk])
-    assert missed == []   # documents current behaviour: any item covers
+    assert missed == runs
+
+
+def test_a_skip_accounts_for_a_run_it_declines_to_explain():
+    """The escape hatch for a run that genuinely needs no prose — generated
+    output, a mechanical rename. It covers, because it is an answer."""
+    body = hunk(250, 29)
+    skip = {"k": "skip", "n": 0, "data": {"line": 263, "why": "generated"}}
+    runs, missed = runCoverage(body, [skip])
+    assert missed == []
 
 
 def test_several_notes_on_one_run_keep_their_own_positions():
