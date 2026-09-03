@@ -175,11 +175,14 @@ def publishReview(review, sessionId=None):
     # Coverage last, because a review that fails the shape check has not been
     # read closely enough for its gaps to mean anything yet.
     gaps = coverageGaps(session["diff"], review)
+    incomplete = ""
     if gaps:
         session["attempts"] = session.get("attempts", 0) + 1
-        if session["attempts"] >= MAX_ATTEMPTS:
-            return exhausted(gaps)
-        return coverageRejection(gaps, session["attempts"])
+        if session["attempts"] < MAX_ATTEMPTS:
+            return coverageRejection(gaps, session["attempts"])
+        # Out of attempts. Publish what there is rather than nothing — see
+        # `incompleteNotice`.
+        incomplete = incompleteNotice(gaps)
 
     root, base, head = session["root"], session["base"], session["head"]
     rangeLabel = f"{base or 'default'}...{head}"
@@ -199,7 +202,7 @@ def publishReview(review, sessionId=None):
     return (
         f"Published: {url}\n\n"
         "Give the developer this URL. Do not paste the review into the "
-        "conversation — the page is the deliverable."
+        "conversation — the page is the deliverable." + incomplete
     )
 
 
@@ -213,9 +216,11 @@ MIN_RUN = 3
 # How many gaps to name before the list stops being something to act on.
 MAX_LISTED = 20
 
-# How many times one session may be rejected before tony stops asking. An agent
-# that cannot satisfy the gate in three attempts will not on the fourth, and
-# publishing the review anyway would defeat the point of having a gate.
+# How many times one session is sent back to fill gaps before tony publishes
+# what it has. The retries are the point of the gate — they are cheap, and they
+# are what makes an agent go back and explain what it skipped. Refusing forever
+# is not: the developer spent a context window on this, and a page that shows
+# its own gaps is worth more to them than a message saying they got nothing.
 MAX_ATTEMPTS = 3
 
 
@@ -267,14 +272,20 @@ def coverageRejection(gaps, attempt):
     )
 
 
-def exhausted(gaps):
-    """Given up after MAX_ATTEMPTS. Say so to the human, do not publish."""
+def incompleteNotice(gaps):
+    """What to say when we publish a review that still has holes in it.
+
+    The page marks every one of them — a dashed block where the code is, and a
+    count per file — so this is not a bad review passed off as a good one. It is
+    an honest one, and honestly labelled, which is worth more than a refusal
+    after the developer has already paid for the work.
+    """
     return (
-        f"tony: giving up after {MAX_ATTEMPTS} attempts — {len(gaps)} blocks of "
-        "changed code are still unexplained.\n\n"
-        "Nothing was published. Tell the developer which parts of the change "
-        "went unreviewed, and\n"
-        "that they can re-run tony on a narrower range."
+        f"\n\nPublished with {len(gaps)} block"
+        f"{'' if len(gaps) == 1 else 's'} still unexplained, after "
+        f"{MAX_ATTEMPTS} attempts. The page marks each one, so the reader can "
+        "see what was not covered.\nTell the developer that, and that a "
+        "narrower range would get a fuller review."
     )
 
 

@@ -361,16 +361,18 @@ def test_a_skip_needs_a_reason(tmp_path, monkeypatch):
     assert "skips[0] has no `why`" in out
 
 
-def test_the_gate_gives_up_rather_than_publishing_anyway(tmp_path, monkeypatch):
-    """A retry budget, so a bad agent cannot loop against the endpoint — and
-    when it runs out, nothing is published. A bad review with a URL is worse
-    than no review, because only one of those gets read."""
+def test_the_gate_runs_out_of_patience_but_still_publishes(tmp_path, monkeypatch):
+    """The retries are the point — they are what makes an agent go back and
+    explain what it skipped. Refusing forever is not: the developer already
+    paid for the work, and the page marks every gap it still has, so an honest
+    incomplete review beats a message saying they got nothing."""
     sid = started(changedRepo(tmp_path), monkeypatch)
     empty = {"intent": "i", "annotations": []}
     assert "2 attempts left" in mcp_server.publishReview(empty, sid)
     assert "1 attempt left" in mcp_server.publishReview(empty, sid)
     out = mcp_server.publishReview(empty, sid)
-    assert "giving up" in out and "Published" not in out
+    assert "Published:" in out
+    assert "still unexplained" in out
 
 
 def test_skips_reach_the_page_where_the_code_is(tmp_path, monkeypatch):
