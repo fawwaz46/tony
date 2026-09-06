@@ -17,6 +17,7 @@ file and search tools than tony ever shipped.
 
 import os
 import secrets
+import time
 
 # The SDK renamed FastMCP to MCPServer in 2.0. The class is the same shape —
 # same constructor, same `.tool` decorator, same `.run(transport=...)` — so
@@ -24,13 +25,13 @@ import secrets
 # dependency floor of `mcp>=1.9` resolves to 2.x on a fresh install and to
 # whatever is already there on an upgrade, and both have to work.
 try:
-    from mcp.server.mcpserver import MCPServer as Server
+    from mcp.server.mcpserver import Context, MCPServer as Server
 except ImportError:  # mcp < 2
-    from mcp.server.fastmcp import FastMCP as Server
+    from mcp.server.fastmcp import Context, FastMCP as Server
 
-from tony_cli import hosted
+from tony_cli import hosted, install
+from tony_cli.anchors import anchorProblems
 from tony_cli.layout import isSkippable, itemsByPath, runCoverage
-from tony_cli.page import renderPage
 from tony_cli.payload import buildPayload, dumpPayload
 from tony_cli.source.local import (
     FAILED, getDiff, isDirty, resolveBase, resolveRepo, resolveRev,
@@ -90,13 +91,23 @@ def workingTreeProblem(root, head):
     return None
 
 
-def startReview(path=None, range=None):
-    """Set up a review and return what the agent needs to write it."""
+def startReview(path=None, range=None, harness=("", "")):
+    """Set up a review and return what the agent needs to write it.
+
+    `harness` is (name, version) of the agent on the other end of this
+    connection, for the provenance record — see `harnessOf`.
+    """
     # Checked first, and deliberately before anything expensive: an agent that
     # writes a full review and only then learns it cannot be published has
     # spent the user's context for nothing.
     if not hosted.savedToken():
         return NOT_LOGGED_IN
+
+    # Asked here rather than at the command line: `tony mcp` runs for a whole
+    # agent session and prints to a stderr nobody reads, so the only way this
+    # machine's owner hears about a release is through the agent talking to
+    # them. The request overlaps the git work below and nothing waits on it.
+    check = install.startUpdateCheck()
 
     repoPath = os.path.abspath(path or os.getcwd())
     try:
@@ -138,6 +149,13 @@ def startReview(path=None, range=None):
     SESSIONS[sid] = {
         "root": root, "base": base, "head": head, "diff": diff,
         "instructions": served["version"],
+        # Everything the provenance record needs that is only knowable here:
+        # who is calling, how big the thing they were handed is, and when they
+        # were handed it. See `provenanceOf`.
+        "harness": harness,
+        "startedAt": time.time(),
+        "diffLines": diff.count("\n") + 1,
+        "diffFiles": len(splitDiffByFile(diff)),
     }
 
     # What the agent reads is not what the page is built from. It gets each
@@ -152,14 +170,34 @@ def startReview(path=None, range=None):
     return (
         f"sessionId: {sid}\n"
         f"repository: {os.path.basename(root)} at {root}\n"
-        f"range: {base}...{head}\n\n"
+        f"range: {base}...{head}\n"
+        f"{updateLine(check)}\n"
         f"{served['document']}\n\n"
         "--- THE DIFF ---\n\n"
         f"{withoutGeneratedBodies(forAgent)}"
     )
 
 
-def publishReview(review, sessionId=None):
+def updateLine(check):
+    """What to tell the agent about a newer tony, or "".
+
+    Written as an instruction because everything else in this response is one,
+    and because the failure mode of a bare fact in a tool result is an agent
+    that decides to act on it — here, by shelling out to upgrade tony in the
+    middle of a review.
+    """
+    newer = install.pendingUpdate(check)
+    if not newer:
+        return ""
+    current = install.installedVersion() or "an older build"
+    return (
+        f"\ntony {newer} is out; this machine has {current}. Say so once at the "
+        "end, alongside\nthe URL — `tony update` installs it. Do not run it "
+        "yourself, and do not let it\ninterrupt the review.\n"
+    )
+
+
+def publishReview(review, sessionId=None, model=""):
     """Validate one review, then render and publish it. Returns text for the agent."""
     session = SESSIONS.get(sessionId) if sessionId else None
     if session is None:
@@ -172,7 +210,15 @@ def publishReview(review, sessionId=None):
     if problems:
         return rejection(problems)
 
-    # Coverage last, because a review that fails the shape check has not been
+    # Then whether any of it points at something real. Separate from the shape
+    # checks because they need the diff and the working tree, and separate from
+    # coverage because a review naming files that do not exist has not been
+    # written against this repository at all.
+    problems = anchorProblems(review, session["diff"], session["root"])
+    if problems:
+        return rejection(problems)
+
+    # Coverage last, because a review that fails the checks above has not been
     # read closely enough for its gaps to mean anything yet.
     gaps = coverageGaps(session["diff"], review)
     incomplete = ""
@@ -190,6 +236,7 @@ def publishReview(review, sessionId=None):
     # Which document this review was written against. The one record that makes
     # "did changing the instructions change anything" answerable later.
     payload["instructions"] = session["instructions"]
+    payload["provenance"] = provenanceOf(session, model)
 
     url, problem = hosted.publish(
         dumpPayload(payload), repo=os.path.basename(root), rangeLabel=rangeLabel,
@@ -204,6 +251,50 @@ def publishReview(review, sessionId=None):
         "Give the developer this URL. Do not paste the review into the "
         "conversation — the page is the deliverable." + incomplete
     )
+
+
+# --- provenance ------------------------------------------------------------
+#
+# What produced this review. tony no longer owns the model or the loop, so the
+# only way to know whether a given agent clears the bar is to record what wrote
+# each review and look at the coverage it achieved. That is the whole argument
+# for these columns: they are how "which harnesses can we support" stops being
+# a guess.
+#
+# Not recorded, because they are not observable from here: turn count and token
+# spend, which happen entirely inside the caller's context. The model is asked
+# for rather than measured, and an agent that does not answer leaves it blank.
+
+def harnessOf(ctx):
+    """(name, version) of the agent connected to this server, or ("", "").
+
+    MCP clients identify themselves at initialize, which is the one piece of
+    provenance nobody has to be asked for. Wrapped in a catch-all because it
+    reaches through three layers of SDK object to get there, and a review must
+    never fail to publish over a diagnostic field.
+    """
+    try:
+        info = ctx.session.client_params.clientInfo
+        return (info.name or "", info.version or "")
+    except Exception:
+        return ("", "")
+
+
+def provenanceOf(session, model=""):
+    """The record of what wrote this review, assembled at publish."""
+    harness, version = session.get("harness") or ("", "")
+    return {
+        "harness": harness,
+        "harnessVersion": version,
+        # Self-reported: nothing in the protocol carries it, so the tool asks
+        # and the instructions say to answer. Blank is a real answer too — it
+        # says the agent was not told to, or would not.
+        "model": (model or "").strip()[:120],
+        "retries": session.get("attempts", 0),
+        "seconds": max(0, round(time.time() - session.get("startedAt", time.time()))),
+        "diffLines": session.get("diffLines", 0),
+        "diffFiles": session.get("diffFiles", 0),
+    }
 
 
 # --- coverage --------------------------------------------------------------
@@ -291,11 +382,12 @@ def incompleteNotice(gaps):
 
 # --- validation ------------------------------------------------------------
 #
-# Shape only, so far. Coverage, anchor, and reference checks are the rest of the
-# gate. What they will share is the contract set here: every problem is one
-# sentence naming the exact place it went wrong, phrased as an instruction,
-# because what reads it is a model deciding what to change — not a person
-# reading a diagnostic.
+# Shape only: is this the right kind of object, with the fields each kind of
+# annotation requires. Whether any of it points at a real place is `anchors.py`,
+# and whether it accounts for the whole diff is `coverageGaps`. All three share
+# the contract set here: every problem is one sentence naming the exact place it
+# went wrong, phrased as an instruction, because what reads it is a model
+# deciding what to change — not a person reading a diagnostic.
 
 KINDS = ("added", "changed", "removed")
 
@@ -413,7 +505,9 @@ PUBLISH_DESCRIPTION = """\
 Validate and publish a finished tony review. Returns the URL of the published page.
 
 `review` is the object described by the instructions tony_start gave you. \
-`sessionId` is the one it returned, unchanged.
+`sessionId` is the one it returned, unchanged. `model` is the model identifier you \
+are running as, if you know it — it is recorded with the review and never shown to \
+the reader.
 
 This validates before it publishes anything. A rejection lists the specific gaps — \
 missing annotations, unexplained hunks, fields that do not match the kind — and \
@@ -426,8 +520,10 @@ Call it once, when the whole review is written. It is not incremental."""
 def buildServer():
     server = Server("tony")
 
+    # `ctx` is injected by the SDK and kept out of the tool's schema, so the
+    # agent never sees it. It is how the server learns which harness is calling.
     @server.tool(name="tony_start", description=START_DESCRIPTION)
-    def tony_start(path: str = "", range: str = "") -> str:
+    def tony_start(path: str = "", range: str = "", ctx: Context = None) -> str:
         """
         Args:
             path: Repository path, or any directory inside it. Defaults to the
@@ -436,16 +532,20 @@ def buildServer():
                 branch name means "that branch...HEAD". Omit for the repo's
                 default branch.
         """
-        return startReview(path or None, range or None)
+        return startReview(path or None, range or None, harness=harnessOf(ctx))
 
     @server.tool(name="tony_publish", description=PUBLISH_DESCRIPTION)
-    def tony_publish(review: dict, sessionId: str) -> str:
+    def tony_publish(review: dict, sessionId: str, model: str = "") -> str:
         """
         Args:
             review: The review object, matching the schema tony_start supplied.
             sessionId: The id from tony_start, unchanged.
+            model: The model you are running as, as its API identifier — for
+                example "claude-opus-5". Recorded with the review so tony can
+                tell which models write good ones. Leave empty if you do not
+                know it; never guess.
         """
-        return publishReview(review, sessionId)
+        return publishReview(review, sessionId, model)
 
     return server
 

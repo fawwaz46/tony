@@ -13,6 +13,7 @@ import subprocess
 import pytest
 
 from tony_cli import mcp_server
+from tony_cli.anchors import anchorProblems
 from tony_cli.mcp_server import annotationProblems, rejection, startReview, validate
 
 
@@ -394,3 +395,231 @@ def test_skips_reach_the_page_where_the_code_is(tmp_path, monkeypatch):
     gen = next(f for f in published["files"] if f["path"] == "gen_pb2.py")
     assert any(b["k"] == "skip" for b in gen["blocks"])
     assert not any(b["k"] == "gap" for b in gen["blocks"])
+
+
+# --- anchors and references ------------------------------------------------
+#
+# Coverage asks whether the review accounts for the whole diff. These ask the
+# other half of the question: whether the places it names exist. Nothing
+# downstream catches an invented one — the renderer reads whatever range it is
+# given and shows the reader a confident screenful of the wrong code.
+
+def covered(**over):
+    """A review that satisfies coverage on `changedRepo`, plus whatever is under test."""
+    return {
+        "intent": "i",
+        "annotations": [note(path="a.py", line=2, now="defines three functions")],
+        "skips": [{"path": "gen_pb2.py", "line": 1, "why": "generated from schema.proto"}],
+        **over,
+    }
+
+
+def test_an_annotation_on_a_file_outside_the_diff_is_refused(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(annotations=[
+        note(path="a.py", line=2, now="defines three functions"),
+        note(path="src/a.py", line=4, now="the same thing again"),
+    ]), sid)
+    assert "not published" in out
+    assert "src/a.py" in out
+    # A basename that matches exactly one changed file is nearly always the
+    # miss, and naming it makes the fix one token.
+    assert "Did you mean a.py?" in out
+
+
+def test_an_anchor_outside_the_changed_region_is_refused(tmp_path, monkeypatch):
+    """The failure that put annotations on the wrong code: a line number that
+    resolves to nothing, which coverage can only report as a different gap."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(annotations=[
+        note(path="a.py", line=2, now="defines three functions"),
+        note(path="a.py", line=400, now="something down here"),
+    ]), sid)
+    assert "a.py:400" in out
+    assert "between 1 and 10" in out
+
+
+def test_an_anchor_above_its_block_resolves_forward(tmp_path, monkeypatch):
+    """The page takes an anchor to the run containing it, or to the next one
+    down the file. This module has to allow exactly what that resolves, or an
+    agent gets rejected for a gap somewhere else entirely."""
+    diff = (
+        "diff --git a/m.py b/m.py\n--- a/m.py\n+++ b/m.py\n"
+        "@@ -20,3 +20,4 @@\n context\n+added\n context\n context\n"
+    )
+    above = {"annotations": [note(path="m.py", line=12)]}
+    inside = {"annotations": [note(path="m.py", line=21)]}
+    below = {"annotations": [note(path="m.py", line=99)]}
+
+    assert anchorProblems(above, diff, str(tmp_path)) == []
+    assert anchorProblems(inside, diff, str(tmp_path)) == []
+    assert "past the last changed line" in anchorProblems(below, diff, str(tmp_path))[0]
+
+
+def test_an_impact_inside_the_diff_is_refused(tmp_path, monkeypatch):
+    """A changed file is explained by its own annotations. Listing it as blast
+    radius is a way to look thorough without leaving the diff."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(impacts=[{
+        "symbol": "f0", "fromPath": "a.py", "path": "a.py", "line": 2,
+        "kind": "compatible", "why": "calls it",
+    }]), sid)
+    assert "is in the diff" in out
+
+
+def test_an_impact_on_a_file_that_does_not_exist_is_refused(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(impacts=[{
+        "symbol": "f0", "fromPath": "a.py", "path": "dashboard/api.ts", "line": 112,
+        "kind": "breaks", "why": "calls f0 with the old signature",
+    }]), sid)
+    assert "not a file in this repository" in out
+
+
+def test_an_impact_past_the_end_of_a_real_file_is_refused(tmp_path, monkeypatch):
+    """f.txt is one line long. Line 112 is a line the agent did not read."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(impacts=[{
+        "symbol": "f0", "fromPath": "a.py", "path": "f.txt", "line": 112,
+        "kind": "behavior-change", "why": "reads the value",
+    }]), sid)
+    assert "f.txt:112" in out and "1 lines long" in out
+
+
+def test_an_impact_whose_symbol_comes_from_nowhere_is_refused(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(impacts=[{
+        "symbol": "f0", "fromPath": "billing/invoices.py", "path": "f.txt",
+        "line": 1, "kind": "compatible", "why": "reads the value",
+    }]), sid)
+    assert "not a changed file" in out
+
+
+def test_a_real_impact_publishes(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(impacts=[{
+        "symbol": "f0", "fromPath": "a.py", "path": "f.txt", "line": 1,
+        "kind": "compatible", "why": "reads the value and is unaffected",
+    }]), sid)
+    assert "Published:" in out
+
+
+def test_a_walkthrough_step_past_the_end_of_a_file_is_refused(tmp_path, monkeypatch):
+    """The page reads these exact lines off disk. A range past the end renders
+    as an empty box under a confident sentence."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(walkthroughs=[{
+        "reach": "changed", "title": "T", "trigger": "You run it",
+        "whatChanged": "It now returns.",
+        "steps": [
+            {"say": "It starts.", "path": "f.txt", "lines": [1, 1]},
+            {"say": "It reads on.", "path": "f.txt", "lines": [40, 90]},
+            {"say": "It finishes."},
+        ],
+    }]), sid)
+    assert "f.txt:40-90" in out and "1 lines long" in out
+
+
+def test_a_walkthrough_that_is_not_a_trace_is_refused(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(walkthroughs=[{
+        "reach": "changed", "title": "T", "trigger": "You run it",
+        "whatChanged": "It now returns.",
+        "steps": [{"say": "It runs."}],
+    }]), sid)
+    assert "1 steps" in out and "3 to 7" in out
+
+
+def test_a_traced_walkthrough_publishes(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(walkthroughs=[{
+        "reach": "changed", "title": "T", "trigger": "You run it",
+        "whatChanged": "It now returns.",
+        "steps": [
+            {"say": "It starts.", "path": "f.txt", "lines": [1, 1], "phase": "same"},
+            {"say": "It calls the new function.", "path": "a.py", "lines": [2, 3],
+             "state": {"n": "0 -> 1"}, "phase": "new"},
+            {"say": "It finishes.", "phase": "same"},
+        ],
+    }]), sid)
+    assert "Published:" in out
+
+
+def test_a_mirror_note_must_point_at_a_real_copy(tmp_path, monkeypatch):
+    """The mirror annotation is the one that explains nothing itself. If where
+    it sends the reader is not in the change, that code is explained by nobody."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(annotations=[
+        note(path="a.py", line=2, now="defines three functions"),
+        note(path="a.py", line=4, title="Same change, async copy",
+             now="Mirrors src/async_a.py line for line. Read the annotations there."),
+    ]), sid)
+    assert "src/async_a.py" in out
+    assert "not in this change" in out
+
+
+# --- provenance ------------------------------------------------------------
+#
+# tony controls no model and no loop, so the only way to learn which agents
+# write reviews worth reading is to record what wrote each one next to the
+# coverage it achieved.
+
+def capturePublish(monkeypatch):
+    """The uploaded payload, parsed. Install after `started`, which patches it too."""
+    sent = {}
+    monkeypatch.setattr(mcp_server.hosted, "publish",
+                        lambda payload, **k: (sent.update(json.loads(payload)),
+                                              ("https://tony-cli.com/r/x", None))[1])
+    return sent
+
+
+def test_the_payload_records_what_wrote_the_review(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    sent = capturePublish(monkeypatch)
+    mcp_server.SESSIONS[sid]["harness"] = ("claude-code", "2.1.0")
+
+    out = mcp_server.publishReview(covered(), sid, model="claude-opus-5")
+    assert "Published:" in out
+
+    from_ = sent["provenance"]
+    assert from_["harness"] == "claude-code"
+    assert from_["harnessVersion"] == "2.1.0"
+    assert from_["model"] == "claude-opus-5"
+    assert from_["retries"] == 0
+    assert from_["diffFiles"] == 2
+    assert from_["diffLines"] > 0
+    assert from_["seconds"] >= 0
+    # Which document produced it, alongside — the pair is what makes "did
+    # tightening the instructions help" answerable at all.
+    assert sent["instructions"] == "v1"
+
+
+def test_provenance_counts_the_retries_the_gate_forced(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    sent = capturePublish(monkeypatch)
+
+    mcp_server.publishReview({"intent": "i", "annotations": []}, sid)
+    mcp_server.publishReview(covered(), sid)
+
+    assert sent["provenance"]["retries"] == 1
+
+
+def test_an_agent_that_does_not_know_its_model_still_publishes(tmp_path, monkeypatch):
+    """Blank is a real answer. Guessing would poison the one column that says
+    which model wrote what."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    sent = capturePublish(monkeypatch)
+
+    assert "Published:" in mcp_server.publishReview(covered(), sid)
+    assert sent["provenance"]["model"] == ""
+    assert sent["provenance"]["harness"] == ""
+
+
+def test_a_harness_that_will_not_identify_itself_is_not_an_error():
+    """Reaching through three layers of SDK object for a diagnostic field must
+    never be the reason a review fails to publish."""
+    class Nothing:
+        pass
+
+    assert mcp_server.harnessOf(None) == ("", "")
+    assert mcp_server.harnessOf(Nothing()) == ("", "")

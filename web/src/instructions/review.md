@@ -25,6 +25,10 @@ Do not summarise the change in the conversation. Your answer is the `review` arg
 
 `tony_publish` validates before it renders anything. If it rejects, it names the exact gaps — fix those and call it again with the same `sessionId`. Coverage is the rule it enforces hardest: every hunk in the diff needs an annotation.
 
+It also checks that the places you name exist. Annotation and skip paths must be files in the diff, anchored no further down than the last changed line. Impact paths must be real files in the repository that are NOT in the diff. Walkthrough line ranges must fit inside the file they name. A range you did not actually read is the thing this catches most often.
+
+Pass `model` with the identifier of the model you are running as — "claude-opus-5", say — if you know it. It is recorded with the review, never shown to the reader, and it is how tony learns which models write reviews worth reading. Leave it empty rather than guessing.
+
 THE REVIEW OBJECT
 
 {
