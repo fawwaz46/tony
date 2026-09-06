@@ -15,7 +15,7 @@ import { TooLarge, gunzip, gzip, isGzip } from "../../server/compress";
 import { encryptionConfigured, seal } from "../../server/crypto";
 import { fail, migrate, sql, userForToken, withDatabase } from "../../server/db";
 import { blobToken } from "../../server/env";
-import { capped } from "../../server/safe";
+import { capped, counted } from "../../server/safe";
 
 export const prerender = false;
 
@@ -33,9 +33,23 @@ const PER_HOUR = 60;
 const REPO_MAX = 200;
 const RANGE_MAX = 200;
 const INTENT_MAX = 2_000;
+// Provenance strings are identifiers — a client name, a version, a model id, a
+// content hash — not prose. Anything longer is not one.
+const NAME_MAX = 120;
+
+// The id IS the capability: anyone signed in who has the link may read the
+// review, which is the whole point of publishing one. So it has to be a
+// credential, not a name. Eight characters of this alphabet is about 40 bits —
+// guessable by someone willing to spend a weekend on it, especially against a
+// route with no throttle. Sixteen is about 79 bits, which is not.
+//
+// Existing eight-character ids keep working; they are already out in links
+// that people have sent, and the read throttle in `[id].ts` is what covers
+// them.
+const ID_LENGTH = 16;
 
 const randomId = () =>
-  [...crypto.getRandomValues(new Uint8Array(8))]
+  [...crypto.getRandomValues(new Uint8Array(ID_LENGTH))]
     .map((b) => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31])
     .join("");
 
@@ -117,14 +131,27 @@ export const POST: APIRoute = async ({ request }) => {
       ...blobToken(),
     });
 
+    // Both are objects out of an uploaded payload, so neither is trusted for
+    // anything beyond what `capped` and `counted` will pass through.
+    const from = (payload.provenance ?? {}) as Record<string, unknown>;
+    const cover = (payload.coverage ?? {}) as Record<string, unknown>;
+
     await sql`
-      INSERT INTO reviews (id, user_id, repo, range, intent, files, annotations, size, blob_path)
+      INSERT INTO reviews (id, user_id, repo, range, intent, files, annotations, size, blob_path,
+                           harness, harness_version, model, instructions,
+                           retries, seconds, diff_lines, diff_files,
+                           changed_lines, unexplained_lines)
       VALUES (${id}, ${user.id},
               ${capped(payload.repo, REPO_MAX)}, ${capped(payload.range, RANGE_MAX)},
               ${capped(payload.intent, INTENT_MAX)},
               ${Array.isArray(payload.files) ? payload.files.length : 0},
               ${Array.isArray(payload.annotations) ? payload.annotations.length : 0},
-              ${raw.length}, ${blob.pathname})`;
+              ${raw.length}, ${blob.pathname},
+              ${capped(from.harness, NAME_MAX)}, ${capped(from.harnessVersion, NAME_MAX)},
+              ${capped(from.model, NAME_MAX)}, ${capped(payload.instructions, NAME_MAX)},
+              ${counted(from.retries)}, ${counted(from.seconds)},
+              ${counted(from.diffLines)}, ${counted(from.diffFiles)},
+              ${counted(cover.changedLines)}, ${counted(cover.unexplainedLines)})`;
 
     return new Response(JSON.stringify({ id }), {
       headers: { "Content-Type": "application/json" },

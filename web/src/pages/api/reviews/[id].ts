@@ -1,9 +1,17 @@
 /**
  * Serve or delete one review.
  *
- * GET requires a logged-in reader — any account will do, since the id is
- * unguessable and a link is still what grants access. It returns decrypted
- * JSON, which is what makes the hosted page and the dashboard possible at all.
+ * GET requires a logged-in reader — any account will do, deliberately: the id
+ * is the capability, and a link you can send a teammate is the entire point of
+ * publishing. It returns decrypted JSON, which is what makes the hosted page
+ * possible at all.
+ *
+ * What makes that stance safe is the pair of things below it. New ids carry
+ * about 79 bits (see reviews.ts), and this route is throttled per account —
+ * without the throttle, "unguessable" was a claim about one id rather than
+ * about a route, and an account could sit and try them by the million for
+ * free. That is the difference between a capability and an oracle.
+ *
  * DELETE is owner-only.
  */
 import type { APIRoute } from "astro";
@@ -12,10 +20,18 @@ import { gunzip, isGzip } from "../../../server/compress";
 import { open } from "../../../server/crypto";
 import { blobToken } from "../../../server/env";
 import {
-  SESSION_COOKIE, fail, migrate, sql, userForSession, userForToken, withDatabase,
+  SESSION_COOKIE, fail, migrate, sql, throttle, userForSession, userForToken,
+  withDatabase,
 } from "../../../server/db";
 
 export const prerender = false;
+
+// Reads per account per hour. A person opening reviews all day does not come
+// close; anything that does is walking the id space. In-memory and
+// per-instance, so it is a speed bump rather than a wall — but a speed bump
+// turns a weekend of guessing into a length of time nobody has.
+const READS_PER_HOUR = 240;
+const HOUR = 60 * 60 * 1000;
 
 // Matches the ceiling the upload route inflates against.
 const MAX_PAYLOAD_BYTES = 10_000_000;
@@ -36,7 +52,14 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
 
   return withDatabase(async () => {
     await migrate();
-    if (!(await reader(request, cookies))) return fail(401, "login required");
+    const user = await reader(request, cookies);
+    if (!user) return fail(401, "login required");
+
+    // Counted before the row is looked up, so a miss costs an attacker the
+    // same budget as a hit and the throttle cannot be walked with wrong ids.
+    if (throttle(`read:${user.id}`, READS_PER_HOUR, HOUR)) {
+      return fail(429, "too many reviews read in the last hour");
+    }
 
     const rows = await sql`SELECT blob_path FROM reviews WHERE id = ${params.id}`;
     if (!rows.length) return fail(404, "not found");

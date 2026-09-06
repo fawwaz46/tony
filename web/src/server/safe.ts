@@ -100,3 +100,16 @@ export function siteOrigin(request: Request, fallback: string): string {
   }
   return fallback;
 }
+
+/**
+ * A number from an uploaded payload on its way into an INTEGER column.
+ *
+ * Postgres throws on anything past 2^31, so an upload claiming a diff of
+ * 1e30 lines would fail the insert and read as an outage rather than as the
+ * junk it is. Everything unusable — a string, NaN, a negative — becomes 0.
+ */
+export function counted(value: unknown, max = 2_000_000_000): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(Math.floor(n), max);
+}

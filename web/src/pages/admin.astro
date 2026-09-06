@@ -1,0 +1,302 @@
+---
+/**
+ * What produced the reviews — the provenance dashboard.
+ *
+ * tony owns no model, no harness and no context window, so the only way to
+ * know whether a given agent writes reviews worth reading is to record what
+ * wrote each one and compare it against the coverage that came out. That is
+ * what these tables are for, and the three questions they exist to answer are
+ * the column headings: which harnesses clear the bar, which degrade as the
+ * diff grows, and whether tightening the instruction document changed anything.
+ *
+ * Every row here belongs to somebody else, so the page is gated on
+ * `users.is_admin` — a flag nothing in the product sets. Turn it on by hand:
+ *   UPDATE users SET is_admin = true WHERE login = 'someone';
+ * A visitor who is not an admin gets a 404 rather than a 403, because a
+ * refusal is also an advertisement.
+ */
+import Shell from "../layouts/Shell.astro";
+import { SESSION_COOKIE, migrate, sql, userForSession } from "../server/db";
+
+export const prerender = false;
+
+let user = null;
+let rows: Record<string, any[]> = { harness: [], model: [], size: [], doc: [], recent: [] };
+let totals: any = null;
+
+try {
+  user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
+} catch {
+  user = null;
+}
+if (!user?.isAdmin) return new Response("Not found", { status: 404 });
+
+await migrate();
+
+// One query per question, each a full scan of a table that holds one row per
+// published review — small enough that indexing it would be premature.
+//
+// Coverage is averaged per review rather than per line, so one enormous diff
+// does not decide the number for a harness, and reviews with nothing changed
+// to explain are left out of the average instead of counted as perfect.
+try {
+  [rows.harness, rows.model, rows.size, rows.doc, rows.recent, totals] = await Promise.all([
+    sql`
+      SELECT coalesce(nullif(harness, ''), '(not recorded)') AS name,
+             max(harness_version) AS version,
+             count(*) AS reviews,
+             avg(CASE WHEN changed_lines > 0
+                 THEN 1 - unexplained_lines::float / changed_lines END) AS coverage,
+             count(*) FILTER (WHERE unexplained_lines = 0 AND changed_lines > 0) AS complete,
+             avg(retries) AS retries, avg(seconds) AS seconds,
+             avg(NULLIF(diff_lines, 0)) AS lines
+      FROM reviews GROUP BY 1 ORDER BY reviews DESC`,
+    sql`
+      SELECT coalesce(nullif(model, ''), '(not recorded)') AS name,
+             count(*) AS reviews,
+             avg(CASE WHEN changed_lines > 0
+                 THEN 1 - unexplained_lines::float / changed_lines END) AS coverage,
+             count(*) FILTER (WHERE unexplained_lines = 0 AND changed_lines > 0) AS complete,
+             avg(retries) AS retries, avg(seconds) AS seconds,
+             avg(NULLIF(diff_lines, 0)) AS lines
+      FROM reviews GROUP BY 1 ORDER BY reviews DESC`,
+    // The question this one answers: does quality fall off as the diff grows.
+    // If it does, it shows up as coverage dropping and retries climbing down
+    // the rows.
+    sql`
+      SELECT CASE WHEN diff_lines = 0 THEN '(not recorded)'
+                  WHEN diff_lines < 200 THEN 'under 200 lines'
+                  WHEN diff_lines < 1000 THEN '200 to 1k'
+                  WHEN diff_lines < 5000 THEN '1k to 5k'
+                  ELSE 'over 5k' END AS name,
+             min(diff_lines) AS floor,
+             count(*) AS reviews,
+             avg(CASE WHEN changed_lines > 0
+                 THEN 1 - unexplained_lines::float / changed_lines END) AS coverage,
+             count(*) FILTER (WHERE unexplained_lines = 0 AND changed_lines > 0) AS complete,
+             avg(retries) AS retries, avg(seconds) AS seconds
+      FROM reviews GROUP BY 1 ORDER BY floor`,
+    // Instruction document versions, oldest first, so a change to the document
+    // reads as a before and an after rather than as two unrelated rows.
+    sql`
+      SELECT coalesce(nullif(instructions, ''), '(before this was recorded)') AS name,
+             min(created_at) AS first_seen,
+             count(*) AS reviews,
+             avg(CASE WHEN changed_lines > 0
+                 THEN 1 - unexplained_lines::float / changed_lines END) AS coverage,
+             count(*) FILTER (WHERE unexplained_lines = 0 AND changed_lines > 0) AS complete,
+             avg(retries) AS retries
+      FROM reviews GROUP BY 1 ORDER BY first_seen`,
+    sql`
+      SELECT id, repo, range, created_at, harness, model, retries, seconds,
+             diff_lines, diff_files, changed_lines, unexplained_lines
+      FROM reviews ORDER BY created_at DESC LIMIT 30`,
+    sql`
+      SELECT count(*) AS reviews,
+             count(DISTINCT user_id) AS people,
+             avg(CASE WHEN changed_lines > 0
+                 THEN 1 - unexplained_lines::float / changed_lines END) AS coverage,
+             count(*) FILTER (WHERE unexplained_lines = 0 AND changed_lines > 0) AS complete,
+             count(*) FILTER (WHERE retries > 0) AS retried
+      FROM reviews`,
+  ]);
+  totals = totals[0];
+} catch (e) {
+  console.error("admin dashboard query failed", e);
+}
+
+const pct = (v: any) =>
+  v === null || v === undefined ? "—" : `${Math.round(Number(v) * 100)}%`;
+const num = (v: any, places = 1) =>
+  v === null || v === undefined ? "—" : Number(v).toFixed(places);
+const whole = (v: any) =>
+  v === null || v === undefined ? "—" : Math.round(Number(v)).toLocaleString();
+const when = (d: string) =>
+  new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+---
+
+<Shell title="Provenance — tony" wide={true}>
+  <section class="sec" style="border:0">
+    <p class="cap">[ provenance ]</p>
+    <h2 class="big">What is writing the reviews.</h2>
+    <p class="body">
+      One row per published review, recorded at <code>tony_publish</code>. Coverage
+      is the share of changed lines a review explained, averaged per review.
+      Turn count and token spend are not here — they happen inside the caller's
+      context and nothing on this side can see them.
+    </p>
+
+    {totals && (
+      <div class="tiles">
+        <div><b>{whole(totals.reviews)}</b><span>reviews</span></div>
+        <div><b>{whole(totals.people)}</b><span>accounts</span></div>
+        <div><b>{pct(totals.coverage)}</b><span>mean coverage</span></div>
+        <div><b>{whole(totals.complete)}</b><span>fully explained</span></div>
+        <div><b>{whole(totals.retried)}</b><span>needed a retry</span></div>
+      </div>
+    )}
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ by harness ]</p>
+    <h2 class="big">Which agents clear the bar.</h2>
+    <table class="prov">
+      <thead>
+        <tr><th>Harness</th><th>Version</th><th class="n">Reviews</th>
+        <th class="n">Coverage</th><th class="n">Complete</th>
+        <th class="n">Retries</th><th class="n">Seconds</th><th class="n">Diff lines</th></tr>
+      </thead>
+      <tbody>
+        {rows.harness.map((r) => (
+          <tr>
+            <td>{r.name}</td><td class="dim">{r.version || "—"}</td>
+            <td class="n">{whole(r.reviews)}</td>
+            <td class="n">{pct(r.coverage)}</td>
+            <td class="n">{whole(r.complete)}</td>
+            <td class="n">{num(r.retries, 2)}</td>
+            <td class="n">{whole(r.seconds)}</td>
+            <td class="n">{whole(r.lines)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ by model ]</p>
+    <h2 class="big">Which models write them.</h2>
+    <p class="body">
+      Self-reported: the protocol carries no model identity, so this is what the
+      agent answered when asked. <b>(not recorded)</b> is an agent that was not
+      told to answer, or would not.
+    </p>
+    <table class="prov">
+      <thead>
+        <tr><th>Model</th><th class="n">Reviews</th><th class="n">Coverage</th>
+        <th class="n">Complete</th><th class="n">Retries</th>
+        <th class="n">Seconds</th><th class="n">Diff lines</th></tr>
+      </thead>
+      <tbody>
+        {rows.model.map((r) => (
+          <tr>
+            <td>{r.name}</td>
+            <td class="n">{whole(r.reviews)}</td>
+            <td class="n">{pct(r.coverage)}</td>
+            <td class="n">{whole(r.complete)}</td>
+            <td class="n">{num(r.retries, 2)}</td>
+            <td class="n">{whole(r.seconds)}</td>
+            <td class="n">{whole(r.lines)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ by diff size ]</p>
+    <h2 class="big">Where it falls apart.</h2>
+    <p class="body">
+      Coverage dropping and retries climbing down these rows is the failure the
+      large-diff work exists to fix.
+    </p>
+    <table class="prov">
+      <thead>
+        <tr><th>Diff</th><th class="n">Reviews</th><th class="n">Coverage</th>
+        <th class="n">Complete</th><th class="n">Retries</th><th class="n">Seconds</th></tr>
+      </thead>
+      <tbody>
+        {rows.size.map((r) => (
+          <tr>
+            <td>{r.name}</td>
+            <td class="n">{whole(r.reviews)}</td>
+            <td class="n">{pct(r.coverage)}</td>
+            <td class="n">{whole(r.complete)}</td>
+            <td class="n">{num(r.retries, 2)}</td>
+            <td class="n">{whole(r.seconds)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ by instruction document ]</p>
+    <h2 class="big">Whether changing the prompt helped.</h2>
+    <p class="body">
+      Oldest first. The document is the only lever left on quality, and this is
+      the only record that says whether pulling it did anything.
+    </p>
+    <table class="prov">
+      <thead>
+        <tr><th>Version</th><th>First seen</th><th class="n">Reviews</th>
+        <th class="n">Coverage</th><th class="n">Complete</th><th class="n">Retries</th></tr>
+      </thead>
+      <tbody>
+        {rows.doc.map((r) => (
+          <tr>
+            <td><code>{r.name}</code></td>
+            <td class="dim">{when(r.first_seen)}</td>
+            <td class="n">{whole(r.reviews)}</td>
+            <td class="n">{pct(r.coverage)}</td>
+            <td class="n">{whole(r.complete)}</td>
+            <td class="n">{num(r.retries, 2)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="sec" style="border:0">
+    <p class="cap">[ recent · {rows.recent.length} ]</p>
+    <h2 class="big">The last thirty.</h2>
+    <table class="prov">
+      <thead>
+        <tr><th>When</th><th>Repo</th><th>Harness</th><th>Model</th>
+        <th class="n">Coverage</th><th class="n">Retries</th>
+        <th class="n">Seconds</th><th class="n">Lines</th><th class="n">Files</th></tr>
+      </thead>
+      <tbody>
+        {rows.recent.map((r) => (
+          <tr>
+            <td class="dim">{when(r.created_at)}</td>
+            <td>{r.repo || "—"} <span class="dim">{r.range}</span></td>
+            <td>{r.harness || "—"}</td>
+            <td>{r.model || "—"}</td>
+            <td class="n">
+              {r.changed_lines > 0
+                ? pct(1 - Number(r.unexplained_lines) / Number(r.changed_lines))
+                : "—"}
+            </td>
+            <td class="n">{r.retries}</td>
+            <td class="n">{whole(r.seconds)}</td>
+            <td class="n">{whole(r.diff_lines)}</td>
+            <td class="n">{whole(r.diff_files)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+</Shell>
+
+<style>
+  .tiles { display: flex; flex-wrap: wrap; gap: 0; margin-top: 1.5rem;
+           border: 1px solid var(--rule); }
+  .tiles > div { flex: 1 1 8rem; padding: 1rem 1.15rem;
+                 border-right: 1px solid var(--rule); }
+  .tiles > div:last-child { border-right: 0; }
+  .tiles b { display: block; font-size: 1.5rem; font-weight: 700; }
+  .tiles span { font-size: .75rem; color: var(--ink-4); }
+
+  /* Wide by nature: nine columns of numbers. It scrolls rather than wraps,
+     because a wrapped table of figures is unreadable. */
+  .prov { width: 100%; border-collapse: collapse; font-size: .85rem;
+          display: block; overflow-x: auto; white-space: nowrap; }
+  .prov th, .prov td { padding: .5rem .75rem; text-align: left;
+                       border-bottom: 1px solid var(--rule); }
+  .prov th { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+             color: var(--ink-4); font-weight: 500; }
+  .prov td { color: var(--ink-2); }
+  .prov .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .prov .dim { color: var(--ink-4); }
+  .prov tbody tr:hover { background: var(--s1); }
+</style>

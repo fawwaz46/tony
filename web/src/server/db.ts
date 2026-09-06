@@ -109,6 +109,12 @@ export async function migrate(): Promise<void> {
   // said it was verified, because it is what accounts are merged on.
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS login TEXT NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`;
+  // Who may read the provenance dashboard, which shows every account's reviews
+  // in aggregate. Nothing in the product sets this — it is turned on by hand,
+  // in the database, which is the right amount of ceremony for a flag that
+  // grants sight of other people's work:
+  //   UPDATE users SET is_admin = true WHERE login = 'someone';
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false`;
   await sql`UPDATE users SET login = github_login WHERE login = ''`;
 
   // One row per provider account, so one person can sign in with GitHub on
@@ -174,6 +180,30 @@ export async function migrate(): Promise<void> {
     sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS files INTEGER NOT NULL DEFAULT 0`,
     sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS annotations INTEGER NOT NULL DEFAULT 0`,
   ]) await stmt;
+  // Provenance: what wrote this review, and how well it did.
+  //
+  // tony owns no model and no loop any more, so the only way to know which
+  // agents produce reviews worth reading is to record what produced each one
+  // and compare it against the coverage that came out. Columns rather than
+  // payload fields because the questions are aggregate ones — does this
+  // harness degrade with diff size, did tightening the instructions help —
+  // and none of them can be asked of a blob store.
+  for (const stmt of [
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS harness TEXT NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS harness_version TEXT NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT ''`,
+    // Which instruction document produced it. The one record that makes
+    // "did changing the document change anything" answerable at all.
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS instructions TEXT NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS retries INTEGER NOT NULL DEFAULT 0`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS seconds INTEGER NOT NULL DEFAULT 0`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS diff_lines INTEGER NOT NULL DEFAULT 0`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS diff_files INTEGER NOT NULL DEFAULT 0`,
+    // Lines, not runs: a run is whatever the diff made contiguous, so counting
+    // runs says nothing about how much code went unexplained.
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS changed_lines INTEGER NOT NULL DEFAULT 0`,
+    sql`ALTER TABLE reviews ADD COLUMN IF NOT EXISTS unexplained_lines INTEGER NOT NULL DEFAULT 0`,
+  ]) await stmt;
   // Earlier revisions stored a public blob URL; the store is private now and
   // objects are addressed by pathname. Renaming is idempotent and a no-op on
   // a database that never saw the old column.
@@ -216,6 +246,18 @@ export interface User {
   /** Whatever this person is called wherever they signed in. */
   login: string;
   avatarUrl: string;
+  /** May read the provenance dashboard. Set by hand in the database. */
+  isAdmin: boolean;
+}
+
+/** One row of the users table as the rest of the site sees it. */
+function asUser(row: Record<string, any>): User {
+  return {
+    id: Number(row.id),
+    login: row.login,
+    avatarUrl: row.avatar_url,
+    isAdmin: Boolean(row.is_admin),
+  };
 }
 
 /** The CLI's identity: an `Authorization: Bearer` token. */
@@ -223,11 +265,11 @@ export async function userForToken(header: string | null): Promise<User | null> 
   const token = header?.match(/^Bearer (.+)$/)?.[1];
   if (!token) return null;
   const rows = await sql`
-    SELECT u.id, u.login, u.avatar_url
+    SELECT u.id, u.login, u.avatar_url, u.is_admin
     FROM tokens t JOIN users u ON u.id = t.user_id
     WHERE t.hash = ${await sha256Hex(token)} AND t.expires_at > now()`;
   if (!rows.length) return null;
-  return { id: Number(rows[0].id), login: rows[0].login, avatarUrl: rows[0].avatar_url };
+  return asUser(rows[0]);
 }
 
 export const SESSION_COOKIE = "tony_session";
@@ -264,11 +306,11 @@ export function throttle(key: string, limit: number, windowMs: number): boolean 
 export async function userForSession(sessionId: string | undefined): Promise<User | null> {
   if (!sessionId) return null;
   const rows = await sql`
-    SELECT u.id, u.login, u.avatar_url
+    SELECT u.id, u.login, u.avatar_url, u.is_admin
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.hash = ${await sha256Hex(sessionId)} AND s.expires_at > now()`;
   if (!rows.length) return null;
-  return { id: Number(rows[0].id), login: rows[0].login, avatarUrl: rows[0].avatar_url };
+  return asUser(rows[0]);
 }
 
 export async function createSession(userId: number): Promise<string> {
