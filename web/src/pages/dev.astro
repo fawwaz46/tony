@@ -8,7 +8,7 @@ export const prerender = false;
 if (import.meta.env.PROD) return new Response("Not found", { status: 404 });
 
 // Two fixtures, deliberately: `review.json` is the curated demo the homepage
-// ships and is tracked; `local.json` is what `tony --viewer` writes and is
+// ships and is tracked; `local.json` is a payload written by hand and is
 // gitignored, because it holds a review of whatever repo you ran in and must
 // never be committable. Read at request time rather than imported so writing
 // one does not need a rebuild.
@@ -19,10 +19,10 @@ const load = (name: string) => {
     return null;
   }
 };
-const payload = load("local.json") ?? load("review.json") ?? "{}";
+const payload = load("review.json") ?? "{}";
 // JSON.stringify does not escape `<`, so a payload containing the literal
 // `</script>` — ordinary enough in a repo that emits HTML — would end this
-// block early and the rest would parse as markup. Same escape page.py uses.
+// block early and the rest would parse as markup.
 const safe = payload.replace(/<\//g, "<\\/");
 ---
 

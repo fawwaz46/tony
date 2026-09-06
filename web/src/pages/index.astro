@@ -30,8 +30,7 @@ const error = Astro.url.searchParams.get("error");
     </p>
     <p class="lede note">
       * Updates and improvements coming soon; excited to see how efficient I can get this.
-      Reach out to me on X (<a href="https://x.com/46waz" rel="me">@46waz</a>) for access,
-      or load your own API key and try it out.
+      Reach out to me on X (<a href="https://x.com/46waz" rel="me">@46waz</a>) for access.
     </p>
     <p class="lede sign">Best,<br />Fawwaz</p>
     <div class="cta-row">
@@ -107,9 +106,9 @@ const error = Astro.url.searchParams.get("error");
     <p class="cap">[ using it ]</p>
     <h2 class="big">Set it up once. Then just ask.</h2>
     <p class="body">
-      tony doesn't call a model. Your coding agent writes the review with the
-      subscription you already pay for — tony hands it the diff, holds it to a standard,
-      and turns the answer into a page you can send someone. There's no API key.
+      tony doesn't call a model. Your coding agent writes the review. tony hands it
+      the diff, holds it to a standard, and turns the answer into a page you can send
+      someone. There's no API key.
     </p>
     <div class="three">
       <div>
@@ -143,31 +142,13 @@ const error = Astro.url.searchParams.get("error");
   </section>
 
   <section class="sec">
-    <p class="cap">[ where your code goes ]</p>
-    <h2 class="big">To your agent, and to us.</h2>
-    <p class="body">
-      Your agent reads the diff and the changed files locally — that part never leaves
-      your machine, and it happens inside whatever tool you already trust with your repo.
-    </p>
-    <p class="body">
-      The finished review does get uploaded, because a link you can send someone is the
-      point. It carries the diff, the explanations, and short windows of source around
-      the lines a reader is sent to — never whole files, and never the path it sat at on
-      your disk. It's encrypted before it reaches storage, so a leak of the store reveals
-      nothing. <b>tony holds the key</b>, which means we can open a review and a court
-      order could too. If that's the wrong trade for a repo, don't publish that repo.
-      <a href="/privacy">The details</a>.
-    </p>
-  </section>
-
-  <section class="sec">
     <p class="cap">[ commands ]</p>
     <h2 class="big">Everything it does.</h2>
     <p class="body">
       Reviewing isn't in this list, because it isn't a command any more — you ask your
       agent. These are the things you run yourself, nearly all of them once.
     </p>
-    <div class="three">
+    <div class="three two">
       <div>
         <h3>Setup</h3>
         <div class="cmd"><code><span class="p">$ </span>tony connect</code></div>
@@ -181,20 +162,16 @@ const error = Astro.url.searchParams.get("error");
         </p>
       </div>
       <div>
-        <h3>Account</h3>
-        <div class="cmd"><code><span class="p">$ </span>tony whoami</code></div>
-        <p class="body">Which account this machine is signed in as.</p>
-        <div class="cmd"><code><span class="p">$ </span>tony unpublish &lt;id&gt;</code></div>
-        <p class="body">Deletes a published review. The id is printed when it's published.</p>
-        <div class="cmd"><code><span class="p">$ </span>tony logout</code></div>
-        <p class="body">Revokes this machine's token, then forgets it locally.</p>
-      </div>
-      <div>
         <h3>Housekeeping</h3>
         <div class="cmd"><code><span class="p">$ </span>tony --help</code></div>
         <p class="body">Every command and flag.</p>
         <div class="cmd"><code><span class="p">$ </span>tony update</code></div>
-        <p class="body">Upgrade, using whichever installer you used.</p>
+        <p class="body">
+          Upgrade, using whichever installer you used. Every other command
+          checks for a release in the background and says so.
+        </p>
+        <div class="cmd"><code><span class="p">$ </span>tony logout</code></div>
+        <p class="body">Revokes this machine's token, then forgets it locally.</p>
         <div class="cmd"><code><span class="p">$ </span>tony uninstall</code></div>
         <p class="body">Removes tony and everything it saved. It asks first.</p>
       </div>

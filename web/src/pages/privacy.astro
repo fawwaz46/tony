@@ -9,37 +9,36 @@ import Shell from "../layouts/Shell.astro";
     <p class="cap">[ privacy ]</p>
     <h2 class="big">What tony stores.</h2>
     <p class="body">
-      Written plainly, because you are trusting us with source code.
+      Written plainly, because you are trusting tony with source code.
     </p>
   </section>
 
   <section class="sec">
-    <p class="cap">[ reviewing locally ]</p>
+    <p class="cap">[ what happens on your machine ]</p>
     <p class="body">
-      Running <code>tony --local</code> touches this site not at all. The diff
-      and the files being reviewed go to Anthropic, which writes the
-      explanation. The page is written to <code>.tony/</code> on your machine.
-      No account, nothing stored here.
+      tony does not call a model. Your coding agent reads the diff and the
+      changed files where they already are, inside whatever tool you have
+      already trusted with the repository, and writes the review there. tony
+      sends nothing to a model provider, and holds no key to one.
     </p>
   </section>
 
   <section class="sec">
     <p class="cap">[ publishing ]</p>
     <p class="body">
-      Publishing is switched off. Reviews stay on the machine that made them,
-      and nothing about them reaches this site. What follows describes what
-      happens if publishing is turned back on, and applies to anything
-      published while it was the default.
+      A finished review is uploaded to this site, which is what produces the
+      link you can send someone. That needs an account.
     </p>
     <p class="body">
       A published review carries the diff and windows of the source around every
       line it explains. That is real source code, and it is stored here.
     </p>
     <p class="body">
-      We also store your GitHub username, user id, and avatar URL; the repo
-      name, branch range, and one-line summary of each review; and a session
-      when you sign in. We never receive your GitHub password, and the GitHub
-      token from signing in is used once to ask who you are and then discarded.
+      tony also stores your username, user id, and avatar URL from wherever you
+      signed in; the repo name, branch range, and one-line summary of each
+      review; a record of which agent and model wrote it; and a session when you
+      sign in. tony never receives your password, and the token from signing in
+      is used once to ask who you are and then discarded.
     </p>
   </section>
 
@@ -53,9 +52,9 @@ import Shell from "../layouts/Shell.astro";
     </p>
     <p class="body">
       <b>What that does not protect against:</b> tony holds the key. Anyone who
-      can run code on this server, and any lawful demand made to us, can reach
-      a review. This is protection against a leak, not against us. Do not
-      publish from a repository you could not share with us.
+      can run code on this server, and any lawful demand made to tony, can
+      reach a review. This is protection against a leak, not against tony. Do
+      not publish from a repository you could not share with tony.
     </p>
   </section>
 
@@ -70,14 +69,14 @@ import Shell from "../layouts/Shell.astro";
   <section class="sec">
     <p class="cap">[ deleting ]</p>
     <p class="body">
-      Delete any review from <a href="/reviews">your reviews</a>, or run
-      <code> tony unpublish &lt;id&gt;</code>. Deleting removes the stored
-      review and its metadata, and the link stops working immediately. To
-      delete your account and everything in it, email us.
+      Delete any review from <a href="/reviews">your reviews</a>. Deleting
+      removes the stored review and its metadata, and the link stops working
+      immediately. To delete your account and everything in it, email me at
+      <a href="mailto:fawwazabayomi@gmail.com">fawwazabayomi@gmail.com</a>.
     </p>
     <p class="body">
-      Reviews are kept until you delete them. We do not sell anything, and
-      there is no advertising or third-party analytics on this site.
+      Reviews are kept until you delete them. tony sells nothing, and there is
+      no advertising or third-party analytics on this site.
     </p>
   </section>
 </Shell>

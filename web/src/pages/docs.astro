@@ -125,14 +125,13 @@ import Shell from "../layouts/Shell.astro";
     <dl class="cmds">
       <dt>tony connect [claude|cursor|amp|codex]</dt>
       <dd>Register with one agent instead of all of them.</dd>
-      <dt>tony whoami</dt>
-      <dd>Which account this machine is signed in as.</dd>
       <dt>tony logout</dt>
       <dd>Revoke this machine's token, then forget it locally.</dd>
-      <dt>tony unpublish &lt;id&gt;</dt>
-      <dd>Delete a published review. The id is printed when it is published.</dd>
       <dt>tony update</dt>
-      <dd>Update to the latest release.</dd>
+      <dd>
+        Update to the latest release. Every other command checks for one in the
+        background and mentions it; none of them install it for you.
+      </dd>
       <dt>tony uninstall</dt>
       <dd>Remove tony and everything it saved.</dd>
     </dl>
