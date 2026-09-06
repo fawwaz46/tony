@@ -41,8 +41,14 @@
 
 /* ---- hero ---- */
 .hero { padding: 5rem 0 3.5rem; border-bottom: 1px solid var(--rule); }
+/* No negative `word-spacing` here, however tight the display type wants to be.
+   Safari applies `letter-spacing` to the space glyph as well as to letters, so
+   the two stack: -.045 and -.15 together took the word space to about nothing
+   and the headline rendered as "Tiredofreadingdiffs?". Chrome does not, which
+   is why it looked right in the only browser it was checked in. The tightness
+   is `letter-spacing`'s job alone. */
 .hero h1 { font-size: clamp(1.9rem, 5vw, 3.1rem); font-weight: 700;
-  letter-spacing: -.045em; word-spacing: -.15em; line-height: 1.05;
+  letter-spacing: -.045em; line-height: 1.05;
   margin: 0 0 1.4rem; max-width: 26ch; color: var(--ink); }
 .hero .lede { font-size: 1.05rem; line-height: 1.55; color: var(--ink-3);
   max-width: 58ch; margin: 0 0 2.25rem; }
