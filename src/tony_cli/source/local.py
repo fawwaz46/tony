@@ -1,18 +1,8 @@
-import fnmatch
 import os
 import re
 import subprocess
 
 from tony_cli.layout import isSkippable
-
-# directories never worth reading — vendored code, build output, vcs internals
-SKIP_DIRS = {
-    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build",
-    ".next", ".astro", "target", "vendor", ".mypy_cache", ".pytest_cache",
-}
-
-MAX_FILE_CHARS = 60_000
-MAX_RESULTS = 200
 
 # A diff and a failure are both strings, so callers that only look at the
 # return value cannot tell them apart — an empty-range check reads "not a git
@@ -23,8 +13,8 @@ FAILED = "getDiff failed: "
 def getDiff(repoPath: str, base=None, head="HEAD", wholeFunctions=False) -> str:
     """The diff as text, or a message starting with FAILED.
 
-    The model is one of the callers and reads this as prose, so a failure has
-    to stay human-readable rather than raise.
+    The reviewing agent reads this straight out of a tool result, so a failure
+    has to stay human-readable rather than raise.
 
     `wholeFunctions` adds `-W`, which grows each hunk to the whole function it
     sits in. That is what an agent otherwise opens the file for — it cannot say
@@ -130,7 +120,7 @@ def resolveBase(root: str) -> str:
 
     raise ValueError(
         f"cannot work out what to diff against in {root} — no origin/HEAD, no main, "
-        "no master. Pass an explicit range, e.g. tony . some-branch...HEAD"
+        "no master. Ask for an explicit range instead, like \"main...HEAD\"."
     )
 
 
@@ -223,76 +213,3 @@ def splitDiffByFile(diff: str):
         })
 
     return files
-
-
-def walkFiles(root: str):
-    """Yield every file path under root, skipping vendored and build directories."""
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for name in filenames:
-            yield os.path.join(dirpath, name)
-
-
-def readFile(path: str) -> str:
-    if not os.path.isfile(path):
-        return f"not a file: {path}"
-    try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read(MAX_FILE_CHARS + 1)
-    except UnicodeDecodeError:
-        return f"binary file, not readable as text: {path}"
-    except OSError as e:
-        return f"could not read {path}: {e}"
-
-    if len(text) > MAX_FILE_CHARS:
-        return text[:MAX_FILE_CHARS] + f"\n\n[truncated at {MAX_FILE_CHARS} chars]"
-    return text
-
-
-def globFiles(pattern: str, root: str) -> str:
-    if not os.path.isdir(root):
-        return f"not a directory: {root}"
-
-    hits = []
-    for path in walkFiles(root):
-        rel = os.path.relpath(path, root)
-        if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(os.path.basename(rel), pattern):
-            hits.append(rel)
-            if len(hits) > MAX_RESULTS:
-                break
-
-    if not hits:
-        return f"no files matching {pattern} under {root}"
-    if len(hits) > MAX_RESULTS:
-        return "\n".join(sorted(hits[:MAX_RESULTS])) + f"\n[more than {MAX_RESULTS} matches, truncated]"
-    return "\n".join(sorted(hits))
-
-
-def grepFiles(pattern: str, root: str) -> str:
-    if not os.path.isdir(root):
-        return f"not a directory: {root}"
-    try:
-        rx = re.compile(pattern)
-    except re.error as e:
-        return f"bad regex {pattern!r}: {e}"
-
-    hits = []
-    for path in walkFiles(root):
-        try:
-            with open(path, encoding="utf-8") as f:
-                for lineno, line in enumerate(f, 1):
-                    if rx.search(line):
-                        rel = os.path.relpath(path, root)
-                        hits.append(f"{rel}:{lineno}: {line.strip()[:200]}")
-                        if len(hits) > MAX_RESULTS:
-                            break
-        except (UnicodeDecodeError, OSError):
-            continue
-        if len(hits) > MAX_RESULTS:
-            break
-
-    if not hits:
-        return f"no matches for {pattern} under {root}"
-    if len(hits) > MAX_RESULTS:
-        return "\n".join(hits[:MAX_RESULTS]) + f"\n[more than {MAX_RESULTS} matches, truncated]"
-    return "\n".join(hits)

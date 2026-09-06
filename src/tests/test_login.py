@@ -184,18 +184,6 @@ def test_tony_api_url_overrides_the_default(monkeypatch):
 
 # --- what the account commands report --------------------------------------
 
-def test_whoami_before_and_after(monkeypatch, capsys):
-    assert hosted.whoami() == 1
-    assert "not signed in" in capsys.readouterr().out
-
-    wire(monkeypatch)
-    hosted.deviceLogin()
-    capsys.readouterr()
-
-    assert hosted.whoami() == 0
-    assert "octocat" in capsys.readouterr().out
-
-
 def test_logout_revokes_server_side_then_forgets_locally(monkeypatch, capsys):
     wire(monkeypatch)
     hosted.deviceLogin()
@@ -264,7 +252,6 @@ def test_publish_uploads_and_returns_a_clean_link(monkeypatch, capsys):
     assert sent["body"][:2] == b"\x1f\x8b"
     assert sent["type"] == "application/gzip"
     assert json.loads(gzip.decompress(sent["body"])) == {"v": 1, "secret": "source code"}
-    assert "abc123" in capsys.readouterr().err
 
 
 # --- the browser flow ------------------------------------------------------

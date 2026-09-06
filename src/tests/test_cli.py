@@ -1,16 +1,21 @@
-"""The failure paths a stranger hits first.
+"""What `tony` itself does when someone types it.
 
-A blank page with exit 0 is worse than an error: it looks like tony worked and
-found nothing. These pin the loud-failure behaviour, the base-branch spelling
-that must survive a deleted local branch, and the wall that keeps the model's
-tool calls inside the repo under review.
+tony does not review anything any more — the reviewing lives in the MCP server
+and runs inside the caller's agent. What is left at the command line is
+accounts, agent wiring, and the two paths a stranger hits first: typing `tony`
+with nothing after it, and typing the range the old tony took directly.
+
+The repository wall (`confine`) is tested here rather than with the diff
+helpers because it is a security boundary: the payload builder reads files by
+paths that came out of a model.
 """
 
+import json
 import subprocess
+import time
 
-import pytest
-
-from tony_cli.agent import main, runTool
+from tony_cli import agent, hosted, install
+from tony_cli.agent import main
 from tony_cli.source.local import confine, resolveBase
 
 
@@ -24,78 +29,49 @@ def makeRepo(path, branch="main"):
     return path
 
 
-# --- unparseable review is a loud failure ----------------------------------
+# --- the two things a stranger types ----------------------------------------
 
-def test_unparseable_review_exits_1_and_keeps_raw(tmp_path, monkeypatch, capsys):
-    repo = makeRepo(tmp_path / "r")
-    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat"], check=True)
-    (repo / "f.txt").write_text("one\ntwo\n")
-    subprocess.run(["git", "-C", str(repo), "commit", "-qam", "c2"], check=True)
+def test_bare_tony_prints_what_to_do_next(capsys):
+    """Nothing after `tony` is not an error state, it is someone who just
+    installed it. The answer they need is `tony connect`."""
+    assert main([]) == 0
+    assert "tony connect" in capsys.readouterr().out
 
-    diff = subprocess.run(
-        ["git", "-C", str(repo), "diff", "main...HEAD"],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    truncated = '```json\n{"intent": "cut off mid-'  # no closing fence, no valid JSON
 
-    monkeypatch.setattr(
-        "tony_cli.agent.review", lambda *a, **k: (0, truncated, diff)
-    )
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-
-    code = main([str(repo), "main...HEAD", "--no-open", "--local"])
-    assert code == 1
+def test_a_range_says_where_the_reviewing_went(capsys):
+    """`tony main...HEAD` used to be the whole product. Anyone with that habit
+    gets told what replaced it, not an argparse error about an unknown file."""
+    assert main(["main...HEAD"]) == 2
     err = capsys.readouterr().err
-    assert "unparseable" in err
-    assert not (repo / ".tony" / "main...HEAD.html").exists()
-    raw = repo / ".tony" / "main...HEAD.raw.txt"
-    assert raw.exists() and "cut off" in raw.read_text()
+    assert "no longer reviews on its own" in err
+    assert "tony connect" in err
 
 
-def test_parseable_review_writes_a_page(tmp_path, monkeypatch):
-    repo = makeRepo(tmp_path / "r")
-    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat"], check=True)
-    (repo / "f.txt").write_text("one\ntwo\n")
-    subprocess.run(["git", "-C", str(repo), "commit", "-qam", "c2"], check=True)
-    diff = subprocess.run(
-        ["git", "-C", str(repo), "diff", "main...HEAD"],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    review = '```json\n{"intent": "adds a line", "annotations": []}\n```'
-
-    monkeypatch.setattr("tony_cli.agent.review", lambda *a, **k: (0, review, diff))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
-
-    assert main([str(repo), "main...HEAD", "--no-open", "--local"]) == 0
-    page = (repo / ".tony" / "main...HEAD.html").read_text()
-    assert "adds a line" in page
-    assert 'id="tony-payload"' in page
+def test_help_is_not_a_failure(capsys):
+    assert main(["--help"]) == 0
+    assert "tony connect" in capsys.readouterr().out
 
 
-# --- resolveBase must return something git can diff against ----------------
+# --- the base branch must survive a deleted local branch --------------------
 
 def test_resolved_remote_base_keeps_its_remote_spelling(tmp_path):
-    up = makeRepo(tmp_path / "up")
-    dn = tmp_path / "dn"
-    subprocess.run(["git", "clone", "-q", str(up), str(dn)], check=True)
-    subprocess.run(["git", "-C", str(dn), "checkout", "-qb", "feature"], check=True)
-    subprocess.run(["git", "-C", str(dn), "branch", "-qD", "main"], check=True)
-
-    base = resolveBase(str(dn))
-    # The local main is gone; a bare "main" would make every diff fail.
-    probe = subprocess.run(
-        ["git", "-C", str(dn), "rev-parse", "--verify", "--quiet", base],
-        capture_output=True, text=True,
-    )
-    assert probe.returncode == 0, f"resolveBase returned {base!r}, which git cannot resolve"
+    repo = makeRepo(tmp_path / "r")
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(repo)],
+                   check=True)
+    subprocess.run(["git", "-C", str(repo), "update-ref",
+                    "refs/remotes/origin/main", "HEAD"], check=True)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat"], check=True)
+    subprocess.run(["git", "-C", str(repo), "branch", "-qD", "main"], check=True)
+    assert resolveBase(str(repo)) == "origin/main"
 
 
 def test_local_base_is_preferred_when_it_exists(tmp_path):
     repo = makeRepo(tmp_path / "r")
+    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat"], check=True)
     assert resolveBase(str(repo)) == "main"
 
 
-# --- tool calls stay inside the repo ----------------------------------------
+# --- reads stay inside the repo under review --------------------------------
 
 def test_confine_accepts_paths_inside(tmp_path):
     (tmp_path / "a.py").write_text("x")
@@ -119,51 +95,71 @@ def test_confine_rejects_symlinks_out(tmp_path):
     assert confine(str(repo), str(repo / "link")) is None
 
 
-def test_runTool_refuses_reads_outside_the_repo(tmp_path):
-    repo = makeRepo(tmp_path / "r")
-    out = runTool("readFile", {"path": "/etc/passwd"}, str(repo))
-    assert out.startswith("refused:")
+# --- telling someone a release exists ---------------------------------------
+
+def test_no_notice_when_the_index_is_behind_this_machine():
+    """A machine that just installed the newest version can be ahead of what
+    the index admits exists. That is not an update."""
+    assert install.newerVersion("0.4.2", current="0.4.2") is None
+    assert install.newerVersion("0.4.1", current="0.4.2") is None
+    assert install.newerVersion("0.5.0", current="0.4.2") == "0.5.0"
 
 
-def test_runTool_serves_reads_inside_the_repo(tmp_path):
-    repo = makeRepo(tmp_path / "r")
-    out = runTool("readFile", {"path": str(repo / "f.txt")}, str(repo))
-    assert out == "one\n"
+def test_a_prerelease_is_never_offered():
+    """`tony update` will not move anyone onto one, so nothing should announce
+    one either."""
+    assert install.newerVersion("0.5.0rc1", current="0.4.2") is None
 
 
-# --- flags must fail before the review is paid for --------------------------
+def test_the_notice_falls_back_to_the_last_answer(monkeypatch, tmp_path):
+    """The check runs in the background, and plenty of commands finish before
+    one HTTP round trip does. The previous run's answer is what makes the
+    notice appear at all on a machine like that."""
+    cache = tmp_path / "update.json"
+    cache.write_text(json.dumps({"latest": "9.9.9", "checkedAt": time.time()}))
+    monkeypatch.setattr(install, "CHECK_CACHE", str(cache))
+    monkeypatch.setattr(install, "installedVersion", lambda: "0.4.2")
 
-def test_json_does_not_demand_an_account(tmp_path, monkeypatch, capsys):
-    """--json prints and exits without uploading, so it needs no login.
-
-    It used to share the publish gate, which asked people to sign in to a site
-    the run would never contact.
-    """
-    repo = makeRepo(tmp_path / "r")
-    subprocess.run(["git", "-C", str(repo), "checkout", "-qb", "feat"], check=True)
-    (repo / "f.txt").write_text("one\ntwo\n")
-    subprocess.run(["git", "-C", str(repo), "commit", "-qam", "c2"], check=True)
-
-    monkeypatch.setattr("tony_cli.hosted.savedToken", lambda: None)
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-
-    code = main([str(repo), "main...HEAD", "--json"])
-    err = capsys.readouterr().err
-    assert "sign in" not in err          # it got past the publish gate
-    assert "ANTHROPIC_API_KEY" in err    # and stopped on the key it does need
-    assert code == 2
+    notice = install.updateNotice(handle=None)
+    assert "9.9.9" in notice and "tony update" in notice
 
 
-def test_max_tokens_below_one_is_an_argument_error(tmp_path, capsys):
-    """A ceiling no review fits under is a typo, caught before any work."""
-    repo = makeRepo(tmp_path / "r")
-    assert main([str(repo), "--local", "--max-tokens", "0"]) == 2
-    assert "--max-tokens must be at least 1" in capsys.readouterr().err
+def test_a_stale_answer_is_not_repeated_forever(monkeypatch, tmp_path):
+    cache = tmp_path / "update.json"
+    old = time.time() - install.CACHE_TTL - 1
+    cache.write_text(json.dumps({"latest": "9.9.9", "checkedAt": old}))
+    monkeypatch.setattr(install, "CHECK_CACHE", str(cache))
+    monkeypatch.setattr(install, "installedVersion", lambda: "0.4.2")
+
+    assert install.updateNotice(handle=None) == ""
 
 
-def test_viewer_without_a_source_install_fails_first(tmp_path, monkeypatch, capsys):
-    """Not after a paid-for review — there is nowhere for the payload to go."""
-    repo = makeRepo(tmp_path / "r")
-    monkeypatch.setattr("tony_cli.agent.viewerFixture", lambda: None)
-    assert main([str(repo), "--local", "--viewer"]) == 2
-    assert "installed from source" in capsys.readouterr().err
+def test_a_corrupt_cache_is_not_an_error(monkeypatch, tmp_path):
+    cache = tmp_path / "update.json"
+    cache.write_text("{ not json")
+    monkeypatch.setattr(install, "CHECK_CACHE", str(cache))
+    assert install.savedCheck() is None
+
+
+def test_every_command_carries_the_notice(monkeypatch, capsys):
+    """The point of the whole thing: someone typing an unrelated command is how
+    they find out a release happened."""
+    monkeypatch.setattr(install, "startUpdateCheck", lambda: ("handle",))
+    monkeypatch.setattr(install, "updateNotice", lambda handle: "tony: 9.9.9 is out")
+
+    assert main([]) == 0
+    assert "9.9.9" in capsys.readouterr().err
+
+
+def test_update_and_mcp_do_not_carry_it():
+    """`tony update` would be talking over itself, and `tony mcp` speaks a
+    protocol on stdio — it tells the agent instead."""
+    for command in ("update", "uninstall", "mcp"):
+        assert command in agent.NO_NOTICE
+
+
+def test_a_source_checkout_is_never_told_to_update(monkeypatch):
+    """It updates with `git pull`. Asking PyPI about it would only produce a
+    notice nobody can act on."""
+    monkeypatch.setattr(install, "isSourceCheckout", lambda: True)
+    assert install.startUpdateCheck() is None

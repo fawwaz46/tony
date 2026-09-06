@@ -1,15 +1,18 @@
 """How this copy of tony was installed, and how to change it.
 
-`tony --update` and `tony uninstall` both have to answer the same question
+`tony update` and `tony uninstall` both have to answer the same question
 first: which tool put this here? Guessing from PATH picks whichever installer
 the user happens to also have, so both read the receipt the installer left at
 the root of the environment tony is actually running from.
 """
 
+import json
 import os
 import re
 import subprocess
 import sys
+import threading
+import time
 
 import httpx
 
@@ -151,6 +154,120 @@ def latestVersion(timeout=10):
 
     ranked = [(key, v) for v in versions if (key := _release(v))]
     return max(ranked)[1] if ranked else None
+
+
+# --- "there is a newer tony" -----------------------------------------------
+#
+# Nobody runs `tony update` on a hunch. The only moment anyone finds out a
+# release exists is a moment tony creates, so every run asks — but off the
+# critical path: the question goes to a background thread while the command
+# does its work, and whatever has come back by the time the command finishes
+# gets printed. A slow or dead index costs the run nothing.
+
+CHECK_CACHE = os.path.join(os.path.expanduser("~"), ".tony", "update.json")
+
+# The background request's own timeout. Generous, because nothing waits on it:
+# an answer that lands after the command has printed is still saved, and the
+# next run says it.
+CHECK_TIMEOUT = 5
+
+# How long the command waits at exit for an answer that has not arrived. Short
+# enough not to be felt, and missing it is not a loss — the cache below carries
+# the previous run's answer.
+NOTICE_WAIT = 0.4
+
+# How long a cached answer stays worth repeating. A version that was newest a
+# week ago may not be, but saying "0.5.0 is out" about a real release is never
+# wrong in a way that matters — and it is what makes the notice show up on the
+# run after the one that did the asking.
+CACHE_TTL = 7 * 24 * 3600
+
+
+def savedCheck():
+    """The last answer PyPI gave, or None if there isn't a fresh one."""
+    try:
+        with open(CHECK_CACHE, encoding="utf-8") as fh:
+            saved = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(saved, dict):
+        return None
+    try:
+        checkedAt = float(saved.get("checkedAt") or 0)
+    except (TypeError, ValueError):
+        return None
+    if time.time() - checkedAt > CACHE_TTL:
+        return None
+    return saved.get("latest") or None
+
+
+def saveCheck(latest):
+    try:
+        os.makedirs(os.path.dirname(CHECK_CACHE), mode=0o700, exist_ok=True)
+        with open(CHECK_CACHE, "w", encoding="utf-8") as fh:
+            json.dump({"latest": latest, "checkedAt": time.time()}, fh)
+    except OSError:
+        pass  # A cache that cannot be written costs one HTTP request a run.
+
+
+def startUpdateCheck():
+    """Ask the index what the newest release is, without waiting for it.
+
+    Returns a handle for `updateNotice`, or None when there is nothing to ask
+    about — a source checkout updates with `git pull`, not from PyPI.
+    """
+    if isSourceCheckout():
+        return None
+
+    answer = {}
+
+    def ask():
+        latest = latestVersion(timeout=CHECK_TIMEOUT)
+        if latest:
+            answer["latest"] = latest
+            saveCheck(latest)
+
+    # Daemon: an index that never answers must not hold the process open after
+    # the command it was launched alongside has finished.
+    thread = threading.Thread(target=ask, daemon=True)
+    thread.start()
+    return thread, answer
+
+
+def newerVersion(latest, current=None):
+    """`latest` if it is a real release ahead of what is installed, else None."""
+    here = _release(current if current is not None else (installedVersion() or ""))
+    there = _release(latest or "")
+    return latest if here and there and there > here else None
+
+
+def pendingUpdate(handle=None, wait=NOTICE_WAIT):
+    """The release this machine could move to, or None. Never raises.
+
+    Waits `wait` seconds on the check `startUpdateCheck` began — no longer,
+    because a person is holding a prompt open on the other end of it.
+    """
+    latest = None
+    if handle:
+        thread, answer = handle
+        try:
+            thread.join(wait)
+        except RuntimeError:
+            pass
+        latest = answer.get("latest")
+    # Either the request has not landed yet or there was no request: the last
+    # run's answer is the next best thing, and it is why this says anything at
+    # all on a machine where every run is shorter than one HTTP round trip.
+    return newerVersion(latest or savedCheck())
+
+
+def updateNotice(handle=None, wait=NOTICE_WAIT):
+    """One line about a newer release, or ""."""
+    newer = pendingUpdate(handle, wait)
+    if not newer:
+        return ""
+    return (f"\ntony: {newer} is out — you have {installedVersion() or 'an older build'}. "
+            "Update with `tony update`.")
 
 
 def update(argv=()):

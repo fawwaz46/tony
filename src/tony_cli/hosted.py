@@ -6,7 +6,7 @@ fragment so the site could never read a review; that was dropped deliberately
 when reading was gated behind an account and a history of past reviews became
 part of the product — both require the server to be able to open a review.
 So: reviews are confidential against a leak of the stored blobs, not against
-the site itself. `tony --publish` says as much the first time you use it.
+the site itself, and the privacy page says so.
 
 Login is GitHub's device flow, the same shape as `gh auth login`: tony prints a
 code, you approve it in a browser, tony polls. The GitHub token is traded to the
@@ -395,19 +395,6 @@ def deviceLogin():
     return 0
 
 
-def whoami():
-    """Who this machine is signed in as, if anyone."""
-    try:
-        with open(CREDENTIALS, encoding="utf-8") as fh:
-            saved = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        print("tony: not signed in. Run `tony login` to publish reviews.")
-        return 1
-    who = saved.get("login") or saved.get("githubLogin") or "unknown"
-    print(f"tony: signed in as {who}.")
-    return 0
-
-
 def logout():
     """Revoke this machine's token server-side, then forget it locally.
 
@@ -443,8 +430,7 @@ def publish(payloadJson, repo="", rangeLabel=""):
     base = apiBase()
     if not base:
         return None, (
-            "TONY_API_URL is not set. Publishing needs a deployed tony site — "
-            "the local page in .tony/ works without one."
+            "TONY_API_URL is not set, so there is no site to publish to."
         )
     token = savedToken()
     if not token:
@@ -484,41 +470,7 @@ def publish(payloadJson, repo="", rangeLabel=""):
     body = asJson(resp) or {}
     if not body.get("id"):
         return None, "the site accepted the upload but returned no review id."
-    print(f"tony: to remove it later: tony unpublish {body['id']}", file=sys.stderr)
     return f"{base}/r/{body['id']}", None
-
-
-def unpublish(reviewId):
-    """Delete one of your own published reviews."""
-    base = apiBase()
-    if not base:
-        print("tony: TONY_API_URL is not set.", file=sys.stderr)
-        return 2
-    token = savedToken()
-    if not token:
-        print("tony: not logged in — run `tony login` first.", file=sys.stderr)
-        return 2
-    try:
-        resp = httpx.request(
-            "DELETE",
-            f"{base}/api/reviews/{reviewId}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
-        )
-    except httpx.HTTPError as e:
-        print(f"tony: could not reach {base}: {e}", file=sys.stderr)
-        return 1
-
-    if resp.status_code == 200:
-        print("tony: removed.")
-        return 0
-    if resp.status_code == 403:
-        print("tony: that review belongs to someone else.", file=sys.stderr)
-    elif resp.status_code == 404:
-        print("tony: no such review.", file=sys.stderr)
-    else:
-        print(f"tony: could not remove it ({resp.status_code}).", file=sys.stderr)
-    return 1
 
 
 # --- the instruction document ----------------------------------------------
