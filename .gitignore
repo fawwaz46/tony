@@ -10,10 +10,6 @@ __pycache__/
 # local MCP tool state
 .project-planner/
 
-# the dev viewer's scratch payload: `tony --viewer` fills it with a review of
-# whatever repo it was run in, which is never ours to commit
-web/src/fixtures/local.json
-
 # site build output
 web/.vercel/
 web/dist/
@@ -24,3 +20,6 @@ build/
 # `vercel deploy` from the repo root leaves one of these behind; the linked
 # project lives in web/, which is already ignored above.
 .vercel/
+
+# The dev virtualenv resolver writes this; CI installs with pip, so nothing reads it.
+uv.lock

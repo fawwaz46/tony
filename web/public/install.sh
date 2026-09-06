@@ -45,12 +45,12 @@ else
 fi
 
 echo
-echo "tony: installed. Try it inside any git repo:"
+echo "tony: installed. Two commands and you are set up:"
 echo
-echo "    tony main...my-branch          # review a branch against main"
-echo "    tony --help                    # every command"
+echo "    tony connect                   # register tony with your coding agent"
+echo "    tony login                     # sign in, so reviews have somewhere to go"
 echo
-echo "First run will ask for an ANTHROPIC_API_KEY and tell you where to put it."
+echo "Then ask your agent: \"review this branch with tony\"."
 
 # Both installers put commands in a directory that is often not on PATH, and
 # they only say so on the install that creates it. Telling someone to open a

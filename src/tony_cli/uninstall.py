@@ -1,11 +1,12 @@
 """`tony uninstall` — remove tony and everything it has left on the machine.
 
-Removing the package alone leaves behind the things that actually matter: an
-ANTHROPIC_API_KEY in ~/.tony/.env, a token in ~/.tony/credentials.json that is
-still valid server-side, and a .tony/ directory inside every repository tony
-was ever run in. Those directories hold reviews, and reviews hold source — so
-the scattered ones are the part worth being thorough about, and the part a
-`pipx uninstall` was never going to find.
+Removing the package alone leaves behind the things that actually matter: a
+token in ~/.tony/credentials.json that is still valid server-side, an
+ANTHROPIC_API_KEY in ~/.tony/.env left by versions that reviewed on their own,
+and a .tony/ directory inside every repository an older tony was run in. Those
+directories hold reviews, and reviews hold source — so the scattered ones are
+the part worth being thorough about, and the part a `pipx uninstall` was never
+going to find.
 
 Order matters. The site token is revoked before the file holding it is deleted,
 or it stays valid forever on a machine that can no longer present it to log
@@ -37,7 +38,7 @@ MAX_DEPTH = 6
 
 
 def configDir():
-    """`~/.tony` — the API key and the site token, not tied to any repo."""
+    """`~/.tony` — the site token, and whatever older versions left, not tied to any repo."""
     return hosted.CONFIG_DIR
 
 
@@ -145,7 +146,7 @@ def uninstall(argv):
     print("\nThis will delete:\n")
     if hasConfig:
         print(f"  {config}")
-        print("      your ANTHROPIC_API_KEY and your login for the tony site")
+        print("      your login for the tony site, and any key an older tony saved")
     for path in reports:
         print(f"  {path}  ({humanSize(path)})")
     if not hasConfig and not reports:

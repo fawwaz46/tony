@@ -1,5 +1,4 @@
-# CI for tony's own repo: runs the test suite and proves the viewer bundle and
-# the site still build. Nothing here touches a user's repo — deploys of the
+# CI for tony's own repo: runs the test suite and proves the site still builds. Nothing here touches a user's repo — deploys of the
 # site happen through Vercel, and PyPI releases happen in release.yml when a
 # version tag is pushed.
 name: ci
@@ -32,7 +31,7 @@ jobs:
       # Asking for one it cannot get is how the first install attempt failed.
       - run: python .github/check_installer_floor.py
 
-  viewer-and-site:
+  site:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,14 +40,10 @@ jobs:
           node-version: "22"
       - run: npm ci
         working-directory: web
-      - run: npm run build:viewer
-        working-directory: web
       # A hostile payload must never render as markup — any account can upload one.
       - run: npm test
         working-directory: web
-      # The committed bundle must match the source it claims to be built from.
-      - run: git diff --exit-code src/tony_cli/assets/viewer.js src/tony_cli/assets/viewer.css
-      # Same for the installer the site serves at /install.sh.
+      # The installer the site serves at /install.sh must match the one in the repo.
       - run: npm run sync:install
         working-directory: web
       - run: git diff --exit-code web/public/install.sh

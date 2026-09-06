@@ -12,8 +12,8 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-The ABC Favorit and ABC Favorit Mono font files under src/tony_cli/assets/fonts
-are commercial typefaces by Dinamo and are NOT covered by this license.
+The ABC Favorit and ABC Favorit Mono font files under web/public/fonts are
+commercial typefaces by Dinamo and are NOT covered by this license.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

@@ -20,8 +20,6 @@ classifiers = [
     "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = [
-    "anthropic>=0.40",
-    "python-dotenv>=1.0",
     "httpx>=0.27",
     "cryptography>=42",
     "mcp>=1.9",
@@ -44,9 +42,6 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["tony_cli*"]
-
-[tool.setuptools.package-data]
-tony_cli = ["assets/fonts/*.woff2", "assets/viewer.js", "assets/viewer.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]

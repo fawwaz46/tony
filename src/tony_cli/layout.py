@@ -1,28 +1,15 @@
 """The deterministic layer: line numbers, spans, and tags, decided from the diff.
 
 This is the single place those decisions run. The payload carries the result,
-and every renderer — the local page and the hosted viewer are the same
-TypeScript bundle — consumes it without re-deriving anything. See DESIGN.md,
-"Ground truth": the model can name a line range, it can never supply the
-contents of one, and it never decides where a note lands.
+and the renderer — the TypeScript viewer the site serves — consumes it without
+re-deriving anything. See DESIGN.md, "Ground truth": the reviewing agent can
+name a line range, it can never supply the contents of one, and it never
+decides where a note lands.
 """
 
-import json
 import re
 
-JSON_FENCE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
 HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
-
-
-def parseReview(review):
-    """Pull the JSON block out of a raw review. A malformed block yields {}."""
-    match = JSON_FENCE.search(review)
-    if not match:
-        return {}
-    try:
-        return json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return {}
 
 
 def changedRuns(body):
