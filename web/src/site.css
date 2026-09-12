@@ -254,3 +254,11 @@
 .whoami p b { color: var(--ink); font-weight: 500; }
 .whoami form { margin: 0; }
 .whoami .fine { margin: .9rem 0 0; font-size: .75rem; color: var(--ink-4); }
+.whoami .fine a { color: var(--ink-3); }
+
+/* The page's own address, to carry into a private window. Wraps anywhere: it
+   is a URL with no spaces in it and the box is narrower than the CLI form. */
+.whoami .where { margin: .5rem 0 0; }
+.whoami .where code { font-family: var(--mono); font-size: .75rem; color: var(--ink-2);
+  background: var(--s2); border: 1px solid var(--rule); border-radius: 3px;
+  padding: .35rem .5rem; display: block; overflow-wrap: anywhere; }

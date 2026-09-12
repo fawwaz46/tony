@@ -10,10 +10,20 @@
  *
  * Only providers this deployment has credentials for are shown. A button that
  * leads to a provider error page is worse than an absent button.
+ *
+ * Signing out of tony does not sign anyone out of the provider, and GitHub has
+ * no `prompt=select_account` — an app you have already authorized redirects
+ * straight through, so "use a different account" lands you back in the same
+ * one. Google is fine (`prompt: select_account` in `providers.ts`). Rather
+ * than send people to `github.com/logout`, which signs them out of GitHub
+ * everywhere for the sake of a second tony account, the page hands them the
+ * two things that actually work: this URL to open in a private window, where
+ * there is no GitHub session to reuse, and the link to revoke tony's access.
  */
 import Shell from "../layouts/Shell.astro";
 import { SESSION_COOKIE, userForSession } from "../server/db";
-import { configured } from "../server/providers";
+import { clientId, configured, provider } from "../server/providers";
+import { siteOrigin } from "../server/safe";
 
 // Read at request time, not build time: this page's whole job is to act on its
 // query string, and a prerendered copy would never see one.
@@ -39,6 +49,23 @@ try {
 const port = /^\d{1,5}$/.test(params.get("cli") ?? "") ? params.get("cli")! : "";
 const state = /^[a-f0-9]{16,64}$/.test(params.get("state") ?? "") ? params.get("state")! : "";
 const forCli = Boolean(port && state);
+
+// Where to revoke tony on GitHub. The id is public — it rides in every
+// authorize redirect — and this is the only page that has a reason to show it.
+const github = provider("github");
+const githubId = github && configured().includes(github) ? clientId(github) : undefined;
+const revokeUrl = githubId
+  ? `https://github.com/settings/connections/applications/${githubId}`
+  : "";
+
+// The absolute form of this page, for pasting into a private window. Built
+// from the proxied origin rather than `Astro.url.href` so it is the address
+// the visitor actually typed, and it keeps the CLI's port and nonce so a
+// private-window login still finds the waiting terminal.
+const here = new URL(
+  Astro.url.pathname + Astro.url.search,
+  siteOrigin(Astro.request, Astro.url.origin),
+).toString();
 
 const errors: Record<string, string> = {
   login: "That sign-in did not complete. Nothing was saved — try again.",
@@ -89,9 +116,17 @@ const marks: Record<string, string> = {
             <button class="btn quiet" type="submit">Use a different account</button>
           </form>
           <p class="fine">
-            If the provider signs you straight back in as the same person, sign out of it
-            too — tony only controls its own session.
+            This only ends tony's session. If your provider signs you straight back in as
+            the same person, open this page in a private window — there is no account
+            cached there to reuse.
           </p>
+          <p class="where"><code>{here}</code></p>
+          {revokeUrl && (
+            <p class="fine">
+              Or <a href={revokeUrl} rel="noreferrer nofollow" target="_blank">revoke
+              tony's access to GitHub</a>.
+            </p>
+          )}
         </div>
       )
     }
