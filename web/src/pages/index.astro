@@ -20,29 +20,35 @@ const error = Astro.url.searchParams.get("error");
   description="Ask your coding agent to review a branch. tony turns it into a page: every change explained, the blast radius, and steppable runtime walkthroughs."
 >
   <section class="hero">
-    <h1>Tired of reading diffs?<br />Try Tony.</h1>
-    <p class="lede">
-      I've been using AI to write code, and without reading the diff, I have no idea
-      what's going on and lose control of my codebases. Reading English is easier than
-      reading code, so naturally, I opted for that. Made this with the hopes of letting my
-      agents run wild while I still understand what's happening. It's not perfect, but
-      it's been useful for me and fun to build lol.
-    </p>
-    <p class="lede note">
-      * Updates and improvements coming soon; excited to see how efficient I can get this.
-      Reach out to me on X (<a href="https://x.com/46waz" rel="me">@46waz</a>) for access.
-    </p>
-    <p class="lede sign">Best,<br />Fawwaz</p>
-    <div class="cta-row">
-      <div class="cmd">
-        <code
-          ><span class="p">$ </span>curl -fsSL https://tony-cli.com/install.sh | sh</code
-        >
-        <button type="button" data-copy="curl -fsSL https://tony-cli.com/install.sh | sh">
-          Copy
-        </button>
+    <div class="hero-copy">
+      <h1>Tired of reading diffs?<br />Try Tony.</h1>
+      <p class="lede">
+        I've been using AI to write code, and without reading the diff, I have no idea
+        what's going on and lose control of my codebases. Reading English is easier than
+        reading code, so naturally, I opted for that. Made this with the hopes of letting my
+        agents run wild while I still understand what's happening. It's not perfect, but
+        it's been useful for me and fun to build lol.
+      </p>
+      <p class="lede note">
+        * Updates and improvements coming soon; excited to see how efficient I can get this.
+        Reach out to me on X (<a href="https://x.com/46waz" rel="me">@46waz</a>) for access.
+      </p>
+      <p class="lede sign">Best,<br />Fawwaz</p>
+      <div class="cta-row">
+        <div class="cmd">
+          <code
+            ><span class="p">$ </span>curl -fsSL https://tony-cli.com/install.sh | sh</code
+          >
+          <button type="button" data-copy="curl -fsSL https://tony-cli.com/install.sh | sh">
+            Copy
+          </button>
+        </div>
       </div>
     </div>
+    {/* Terminal art, not an illustration: the review pages are made of these
+        same glyphs. Empty on the server and filled by the script below, so
+        there is nothing to see without JS and nothing to read aloud. */}
+    <div class="hero-art"><pre class="orb" aria-hidden="true"></pre></div>
   </section>
 
   <section class="sec">
@@ -204,3 +210,93 @@ const error = Astro.url.searchParams.get("error");
     });
   </script>
 </Shell>
+
+<script>
+  /**
+   * The hero's rotating torus — Andy Sloane's donut, in the ramp a diff is
+   * already written in.
+   *
+   * Two rotations at different rates so it never repeats a pose, and a
+   * z-buffer so the near surface hides the far one. Never drawn on a phone,
+   * where the column is display:none and the work would be thrown away, and
+   * frozen on one frame for anyone who asked for less motion. rAF handles the
+   * rest: a hidden tab stops calling us, so a background page costs nothing.
+   */
+  const pre = document.querySelector(".orb");
+  const wide = window.matchMedia("(min-width: 64rem)");
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  if (pre) {
+    const COLS = 46, ROWS = 24;
+    const RAMP = ".:-=+*#%@";
+    const R1 = 1, R2 = 2, K2 = 5;
+    // The scale that fits a torus of radius R1+R2 across COLS, eased in so a
+    // full rotation never touches an edge and clips.
+    const K1 = ((COLS * K2 * 3) / (8 * (R1 + R2))) * 0.86;
+
+    const cells = new Array(ROWS * COLS);
+    const depth = new Float32Array(ROWS * COLS);
+
+    const frame = (A, B) => {
+      cells.fill(" ");
+      depth.fill(0);
+      const cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
+      for (let th = 0; th < 6.283; th += 0.07) {
+        const ct = Math.cos(th), st = Math.sin(th);
+        for (let ph = 0; ph < 6.283; ph += 0.02) {
+          const cp = Math.cos(ph), sp = Math.sin(ph);
+          const cx = R2 + R1 * ct, cy = R1 * st;
+          const x = cx * (cB * cp + sA * sB * sp) - cy * cA * sB;
+          const y = cx * (sB * cp - sA * cB * sp) + cy * cA * cB;
+          const ooz = 1 / (K2 + cA * cx * sp + cy * sA);
+          const col = Math.round(COLS / 2 + K1 * ooz * x);
+          // Half scale vertically: a character cell is about twice as tall as
+          // it is wide, and an unscaled y stretches the figure into an oval.
+          const row = Math.round(ROWS / 2 - K1 * 0.5 * ooz * y);
+          const lum = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
+          if (lum > 0 && col >= 0 && col < COLS && row >= 0 && row < ROWS) {
+            const i = row * COLS + col;
+            if (ooz > depth[i]) {
+              depth[i] = ooz;
+              cells[i] = RAMP[Math.min(RAMP.length - 1, Math.round(lum * 6))];
+            }
+          }
+        }
+      }
+      let out = "";
+      for (let r = 0; r < ROWS; r++) out += cells.slice(r * COLS, (r + 1) * COLS).join("") + "\n";
+      return out;
+    };
+
+    let A = 0.9, B = 0.4, last = 0, running = false;
+
+    const tick = (now) => {
+      if (!running) return;
+      // ~24fps. Faster buys nothing on a figure this coarse and costs battery.
+      if (now - last > 42) {
+        last = now;
+        A += 0.05;
+        B += 0.022;
+        pre.textContent = frame(A, B);
+      }
+      requestAnimationFrame(tick);
+    };
+
+    const sync = () => {
+      if (!wide.matches) {
+        running = false;
+        pre.textContent = "";
+      } else if (still.matches) {
+        running = false;
+        pre.textContent = frame(A, B);
+      } else if (!running) {
+        running = true;
+        requestAnimationFrame(tick);
+      }
+    };
+
+    wide.addEventListener("change", sync);
+    still.addEventListener("change", sync);
+    sync();
+  }
+</script>

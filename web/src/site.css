@@ -41,6 +41,21 @@
 
 /* ---- hero ---- */
 .hero { padding: 5rem 0 3.5rem; border-bottom: 1px solid var(--rule); }
+/* Two columns only when there is room for the art beside the copy without
+   squeezing the headline; below that the copy is the whole hero and the art
+   is not rendered at all. */
+@media (min-width: 64rem) {
+  .hero { display: grid; grid-template-columns: minmax(0, 36rem) minmax(0, 1fr);
+    gap: 3rem; align-items: center; }
+}
+.hero-art { display: none; }
+@media (min-width: 64rem) { .hero-art { display: block; justify-self: center; } }
+/* Sized so 46 columns sit inside the space the copy leaves. The figure is
+   drawn by glyph density alone — no accent, no colour: the ramp is the
+   shading, the way it is in a terminal. */
+.orb { font-family: var(--mono); font-size: clamp(.78rem, 1.2vw, 1.08rem);
+  line-height: 1.06; letter-spacing: .02em; color: var(--ink-3); margin: 0;
+  white-space: pre; user-select: none; }
 /* No negative `word-spacing` here, however tight the display type wants to be.
    Safari applies `letter-spacing` to the space glyph as well as to letters, so
    the two stack: -.045 and -.15 together took the word space to about nothing
