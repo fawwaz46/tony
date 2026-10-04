@@ -69,6 +69,11 @@
 .orb .f { color: var(--accent); }
 /* Hi Tony's stage: over everything, under nothing, and never in the way of a click. */
 .orb.stage { position: absolute; margin: 0; overflow: hidden; pointer-events: none; z-index: 50; }
+.hey-note { position: absolute; margin: 0; transform: translateX(-50%); white-space: nowrap;
+  font-size: .85rem; color: var(--ink-3); pointer-events: none; z-index: 51;
+  opacity: 0; transition: opacity .45s ease; }
+.hey-note.on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .hey-note { transition: none; } }
 /* No negative `word-spacing` here, however tight the display type wants to be.
    Safari applies `letter-spacing` to the space glyph as well as to letters, so
    the two stack: -.045 and -.15 together took the word space to about nothing

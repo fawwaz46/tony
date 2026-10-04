@@ -394,6 +394,26 @@ const error = Astro.url.searchParams.get("error");
       return { el, offC, offR, cols: Math.ceil(width / CW), rows: Math.ceil(height / LH) };
     };
 
+    /**
+     * The footnote under "hey". Real text, not glyphs: it is read, not drawn.
+     * Centred on the donut's column and hung a row and a half below the
+     * lowest cell of the letters, so it clears the descender of the y.
+     */
+    const footnote = (hey) => {
+      const rect = pre.getBoundingClientRect();
+      const bottom = Math.max(...hey.map((g) => g.r));
+      const el = document.createElement("p");
+      el.className = "hey-note";
+      el.textContent = "*Fawwaz also likes donuts";
+      Object.assign(el.style, {
+        left: `${rect.left + window.scrollX + (COLS / 2) * CW}px`,
+        top: `${rect.top + window.scrollY + (bottom + 1.5) * LH}px`,
+      });
+      document.body.appendChild(el);
+      requestAnimationFrame(() => el.classList.add("on"));
+      return el;
+    };
+
     /** Put a glyph at donut-grid (c, r) — on the stage while one is up. */
     const plot = (grid, c, r, ch) => {
       const stage = hi?.stage;
@@ -466,6 +486,7 @@ const error = Astro.url.searchParams.get("error");
       // Hold: "hey", with a little shimmer so it reads as alive.
       at -= FORM;
       if (at < HOLD) {
+        if (!hi.note) hi.note = footnote(hi.hey);
         for (const g of hi.hey) {
           const ch = Math.random() < 0.04 ? RAMP[4 + Math.floor(Math.random() * 5)] : g.ch;
           plot(grid, g.c, g.r, ch);
@@ -475,6 +496,7 @@ const error = Astro.url.searchParams.get("error");
 
       // Return: the letters stream back onto the donut's next pose.
       at -= HOLD;
+      hi.note?.classList.remove("on");
       if (!hi.back) {
         frame(A + 0.05, B + 0.022);
         hi.back = pair(hi.hey, donutGlyphs());
@@ -503,6 +525,7 @@ const error = Astro.url.searchParams.get("error");
             pre.textContent = "";
           } else {
             hi.stage.el.remove();
+            hi.note?.remove();
             hi = null;
             button?.removeAttribute("disabled");
           }
@@ -523,12 +546,15 @@ const error = Astro.url.searchParams.get("error");
       if (still.matches) {
         // No flying for anyone who asked for less motion: just the word, then
         // the donut back as it was.
+        const hey = heyGlyphs();
         pre.innerHTML = toText((() => {
           const grid = new Array(ROWS * COLS).fill(" ");
-          for (const g of heyGlyphs()) plot(grid, g.c, g.r, g.ch);
+          for (const g of hey) plot(grid, g.c, g.r, g.ch);
           return grid;
         })());
+        const note = footnote(hey);
         setTimeout(() => {
+          note.remove();
           pre.innerHTML = frame(A, B);
           button.removeAttribute("disabled");
         }, HOLD + 400);
