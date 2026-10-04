@@ -7,6 +7,7 @@
  */
 import Shell from "../layouts/Shell.astro";
 import { SESSION_COOKIE, migrate, sql, userForSession } from "../server/db";
+import { RETENTION_DAYS } from "../server/retention";
 
 export const prerender = false;
 
@@ -18,7 +19,9 @@ try {
     await migrate();
     rows = await sql`
       SELECT id, repo, range, intent, files, annotations, created_at
-      FROM reviews WHERE user_id = ${user.id}
+      FROM reviews
+      WHERE user_id = ${user.id}
+        AND created_at > now() - make_interval(days => ${RETENTION_DAYS}::int)
       ORDER BY created_at DESC LIMIT 200`;
   }
 } catch {
@@ -33,6 +36,8 @@ if (!user) return Astro.redirect("/", 302);
 
 const when = (d: string) =>
   new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const DAY = 24 * 60 * 60 * 1000;
+const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_DAYS * DAY).toISOString());
 ---
 
 <Shell title="Reviews — tony">
@@ -58,10 +63,11 @@ const when = (d: string) =>
       <section class="sec" style="border:0">
         <p class="cap">[ reviews · {rows.length} ]</p>
         <h2 class="big">Everything you've published.</h2>
+        <p class="rnote">Each review is deleted {RETENTION_DAYS} days after it was published, and its link stops working.</p>
         <div class="rlist">
           {rows.map((r: any, i: number) => (
             <div class="rrow" data-id={r.id}>
-              <a class="rmain" href={`/r/${r.id}`}>
+              <a class="rmain" href={`/r/${r.id}`} title={`Deleted automatically on ${expires(r.created_at)}`}>
                 <span class="ix">[{String(i + 1).padStart(2, "0")}]</span>
                 <span class="rrepo">{r.repo || "repo"}</span>
                 <span class="rrange">{r.range}</span>
@@ -116,4 +122,29 @@ const when = (d: string) =>
       </section>
     )
   }
+
+  <section class="sec" style="border:0">
+    <p class="cap">[ account ]</p>
+    <p class="rnote">
+      Deleting your account removes every review you have published, your
+      sign-ins, and the CLI's login, straight away. It cannot be undone.
+    </p>
+    <button type="button" class="ract danger" id="delete-account">Delete my account</button>
+    <script>
+      const b = document.getElementById("delete-account") as HTMLButtonElement;
+      b.addEventListener("click", async () => {
+        if (!confirm("Delete your tony account and every review in it? Every link you have sent stops working. This cannot be undone.")) return;
+        b.disabled = true;
+        b.textContent = "Deleting…";
+        const resp = await fetch("/api/account", { method: "DELETE" });
+        if (resp.ok) {
+          location.href = "/";
+        } else {
+          b.disabled = false;
+          b.textContent = "Delete my account";
+          alert("Your account could not be deleted. Try again.");
+        }
+      });
+    </script>
+  </section>
 </Shell>

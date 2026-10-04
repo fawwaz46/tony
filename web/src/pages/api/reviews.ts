@@ -15,6 +15,7 @@ import { TooLarge, gunzip, gzip, isGzip } from "../../server/compress";
 import { encryptionConfigured, seal } from "../../server/crypto";
 import { fail, migrate, sql, userForToken, withDatabase } from "../../server/db";
 import { blobToken } from "../../server/env";
+import { sweepExpired } from "../../server/retention";
 import { capped, counted } from "../../server/safe";
 
 export const prerender = false;
@@ -152,6 +153,11 @@ export const POST: APIRoute = async ({ request }) => {
               ${counted(from.retries)}, ${counted(from.seconds)},
               ${counted(from.diffLines)}, ${counted(from.diffFiles)},
               ${counted(cover.changedLines)}, ${counted(cover.unexplainedLines)})`;
+
+    // Every upload takes a few expired reviews out with it — see
+    // server/retention.ts. After the insert and never fatal: this review is
+    // stored, and someone else's expiry is not a reason to tell them it failed.
+    await sweepExpired().catch((e) => console.error("retention sweep failed:", e));
 
     return new Response(JSON.stringify({ id }), {
       headers: { "Content-Type": "application/json" },

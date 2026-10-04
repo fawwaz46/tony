@@ -178,6 +178,7 @@
 @media (max-width: 46rem) { .rrow .rintent { display: none; } }
 
 .empty { padding: 3.5rem 0; }
+.rnote { color: var(--ink-3); font-size: .9rem; max-width: 60ch; margin: 0 0 1.25rem; }
 .empty p { color: var(--ink-3); font-size: .95rem; max-width: 52ch; margin: 0 0 1.25rem; }
 
 /* ---- footer ---- */

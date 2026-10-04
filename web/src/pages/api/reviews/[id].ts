@@ -12,13 +12,15 @@
  * about a route, and an account could sit and try them by the million for
  * free. That is the difference between a capability and an oracle.
  *
- * DELETE is owner-only.
+ * DELETE is owner-only. Reviews older than the retention window read as not
+ * found — see server/retention.ts.
  */
 import type { APIRoute } from "astro";
 import { del, get } from "@vercel/blob";
 import { gunzip, isGzip } from "../../../server/compress";
 import { open } from "../../../server/crypto";
 import { blobToken } from "../../../server/env";
+import { RETENTION_DAYS } from "../../../server/retention";
 import {
   SESSION_COOKIE, fail, migrate, sql, throttle, userForSession, userForToken,
   withDatabase,
@@ -61,7 +63,12 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
       return fail(429, "too many reviews read in the last hour");
     }
 
-    const rows = await sql`SELECT blob_path FROM reviews WHERE id = ${params.id}`;
+    // Past the retention window is gone, whether or not the sweep has got to
+    // it yet — the policy is what this says, not what the sweep has done.
+    const rows = await sql`
+      SELECT blob_path FROM reviews
+      WHERE id = ${params.id}
+        AND created_at > now() - make_interval(days => ${RETENTION_DAYS}::int)`;
     if (!rows.length) return fail(404, "not found");
 
     const blob = await get(rows[0].blob_path, { access: "private", ...blobToken() });
