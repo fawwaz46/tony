@@ -23,10 +23,10 @@ const error = Astro.url.searchParams.get("error");
     <div class="hero-copy">
       <h1>Tired of reading diffs?<br />Try Tony.</h1>
       <p class="lede">
-        I've been using AI to write code, and without reading the diff, I have no idea
-        what's going on and lose control of my codebases. Reading English is easier than
-        reading code, so naturally, I opted for that. Made this with the hopes of letting my
-        agents run wild while I still understand what's happening.
+        Fawwaz loves coding with AI. Fawwaz doesn’t like reading diffs. Fawwaz made a tool
+        to make reading diffs more bearable. Fawwaz has friends with same issue. Fawwaz made
+        tool public. Fawwaz likes iron man. Fawwaz named the tool after iron man. Say hi to
+        Tony.
       </p>
       <p class="lede note">
         * Updates and improvements coming soon; excited to see how efficient I can get this.
@@ -42,6 +42,8 @@ const error = Astro.url.searchParams.get("error");
             Copy
           </button>
         </div>
+        {/* Only where the donut is drawn: on a phone there is nothing for it to do. */}
+        <button type="button" class="btn hi-tony">Hi Tony</button>
       </div>
     </div>
     {/* Terminal art, not an illustration: the review pages are made of these
@@ -294,17 +296,220 @@ const error = Astro.url.searchParams.get("error");
 
     let A = 0.9, B = 0.4, last = 0, running = false;
 
+    // ---- Hi Tony ----------------------------------------------------------
+    //
+    // The donut trembles, blows apart, its glyphs stream into "hey", hold, and
+    // stream back into the donut where it left off. One timeline, run inside
+    // the same rAF loop as the spin, so a hidden tab pauses it like anything
+    // else. Every glyph on screen is one of the donut's own, flying.
+
+    const TREMBLE = 700, EXPLODE = 750, FORM = 1100, HOLD = 1400, RETURN = 1200;
+    let hi = null; // { start, flyers, hey } while the greeting plays
+
+    const toText = (grid) => {
+      let out = "";
+      for (let r = 0; r < ROWS; r++) out += grid.slice(r * COLS, (r + 1) * COLS).join("") + "\n";
+      return out;
+    };
+
+    /** The non-blank cells of the donut as it is drawn right now. */
+    const donutGlyphs = () => {
+      const out = [];
+      for (let i = 0; i < cells.length; i++) {
+        if (cells[i] !== " ") out.push({ c: i % COLS, r: Math.floor(i / COLS), ch: cells[i] });
+      }
+      return out;
+    };
+
+    /**
+     * "hey" as cells. Drawn on a canvas one pixel per character cell, with y
+     * scaled by the cell's aspect so the letters come out the shape the font
+     * drew them rather than twice as tall.
+     */
+    const heyGlyphs = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = COLS;
+      canvas.height = ROWS;
+      const g = canvas.getContext("2d", { willReadFrequently: true });
+      const family = getComputedStyle(document.querySelector(".hero h1") || document.body).fontFamily;
+      const tall = ROWS / ASPECT; // the grid's height, measured in cell widths
+      g.setTransform(1, 0, 0, ASPECT, 0, 0);
+      let size = tall * 0.62;
+      g.font = `700 ${size}px ${family}`;
+      const width = g.measureText("hey").width;
+      if (width > COLS * 0.86) {
+        size *= (COLS * 0.86) / width;
+        g.font = `700 ${size}px ${family}`;
+      }
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillStyle = "#fff";
+      g.fillText("hey", COLS / 2, tall * 0.46);
+      const px = g.getImageData(0, 0, COLS, ROWS).data;
+      const out = [];
+      for (let i = 0; i < COLS * ROWS; i++) {
+        const a = px[i * 4 + 3];
+        if (a > 80) {
+          const shade = 4 + Math.round((a / 255) * (RAMP.length - 5));
+          out.push({ c: i % COLS, r: Math.floor(i / COLS), ch: RAMP[shade] });
+        }
+      }
+      return out;
+    };
+
+    const shuffle = (xs) => {
+      for (let i = xs.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [xs[i], xs[j]] = [xs[j], xs[i]];
+      }
+      return xs;
+    };
+    const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const clamp01 = (t) => Math.max(0, Math.min(1, t));
+
+    /** Pair every glyph of `from` with one of `to`, recycling the shorter side. */
+    const pair = (from, to) => {
+      const n = Math.max(from.length, to.length);
+      const dst = shuffle(to.slice());
+      return Array.from({ length: n }, (_, i) => ({
+        from: from[i % from.length],
+        to: dst[i % dst.length],
+        delay: Math.random() * 0.28,
+      }));
+    };
+
+    const plot = (grid, c, r, ch) => {
+      const col = Math.round(c), row = Math.round(r);
+      if (col >= 0 && col < COLS && row >= 0 && row < ROWS) grid[row * COLS + col] = ch;
+    };
+
+    /** One frame of the greeting at `t` ms in, or null when it is over. */
+    const hiFrame = (t) => {
+      const grid = new Array(ROWS * COLS).fill(" ");
+
+      // Tremble: the donut keeps turning while its rows shake harder.
+      if (t < TREMBLE) {
+        A += 0.03;
+        B += 0.013;
+        frame(A, B);
+        const amp = 0.4 + (t / TREMBLE) * 2.2;
+        for (let r = 0; r < ROWS; r++) {
+          const shift = Math.round((Math.random() * 2 - 1) * amp);
+          for (let c = 0; c < COLS; c++) {
+            const ch = cells[r * COLS + c];
+            if (ch !== " ") plot(grid, c + shift, r + (Math.random() < 0.04 ? 1 : 0), ch);
+          }
+        }
+        return toText(grid);
+      }
+
+      // Everything after the tremble flies from one snapshot of the donut.
+      if (!hi.flyers) {
+        const burst = donutGlyphs().map((g) => {
+          // Outward from the centre, measured square so the burst is round.
+          const dx = g.c - COLS / 2, dy = (g.r - ROWS / 2) / ASPECT;
+          const len = Math.hypot(dx, dy) || 1;
+          const speed = (0.35 + Math.random() * 0.75) * COLS * 0.5;
+          return { ...g, ex: g.c + (dx / len) * speed, ey: g.r + (dy / len) * speed * ASPECT };
+        });
+        hi.hey = heyGlyphs();
+        hi.flyers = pair(burst, hi.hey);
+      }
+
+      // Explode: out from the centre, decelerating, glyphs flickering.
+      let at = t - TREMBLE;
+      if (at < EXPLODE) {
+        const k = 1 - Math.pow(1 - at / EXPLODE, 3);
+        for (const f of hi.flyers) {
+          const p = f.from;
+          const ch = Math.random() < 0.3 ? RAMP[Math.floor(Math.random() * RAMP.length)] : p.ch;
+          plot(grid, p.c + (p.ex - p.c) * k, p.r + (p.ey - p.r) * k, ch);
+        }
+        return toText(grid);
+      }
+
+      // Form: from wherever the burst left each glyph, into the letters.
+      at -= EXPLODE;
+      if (at < FORM) {
+        for (const f of hi.flyers) {
+          const k = ease(clamp01((at / FORM - f.delay) / (1 - f.delay)));
+          const p = f.from, q = f.to;
+          plot(grid, p.ex + (q.c - p.ex) * k, p.ey + (q.r - p.ey) * k, k > 0.92 ? q.ch : p.ch);
+        }
+        return toText(grid);
+      }
+
+      // Hold: "hey", with a little shimmer so it reads as alive.
+      at -= FORM;
+      if (at < HOLD) {
+        for (const g of hi.hey) {
+          const ch = Math.random() < 0.04 ? RAMP[4 + Math.floor(Math.random() * 5)] : g.ch;
+          plot(grid, g.c, g.r, ch);
+        }
+        return toText(grid);
+      }
+
+      // Return: the letters stream back onto the donut's next pose.
+      at -= HOLD;
+      if (!hi.back) {
+        frame(A + 0.05, B + 0.022);
+        hi.back = pair(hi.hey, donutGlyphs());
+      }
+      if (at < RETURN) {
+        for (const f of hi.back) {
+          const k = ease(clamp01((at / RETURN - f.delay) / (1 - f.delay)));
+          const p = f.from, q = f.to;
+          plot(grid, p.c + (q.c - p.c) * k, p.r + (q.r - p.r) * k, k > 0.85 ? q.ch : p.ch);
+        }
+        return toText(grid);
+      }
+      return null;
+    };
+
     const tick = (now) => {
       if (!running) return;
       // ~24fps. Faster buys nothing on a figure this coarse and costs battery.
       if (now - last > 42) {
         last = now;
-        A += 0.05;
-        B += 0.022;
-        pre.textContent = frame(A, B);
+        if (hi) {
+          if (!hi.start) hi.start = now;
+          const text = hiFrame(now - hi.start);
+          if (text !== null) {
+            pre.textContent = text;
+          } else {
+            hi = null;
+            button?.removeAttribute("disabled");
+          }
+        }
+        if (!hi) {
+          A += 0.05;
+          B += 0.022;
+          pre.textContent = frame(A, B);
+        }
       }
       requestAnimationFrame(tick);
     };
+
+    const button = document.querySelector(".hi-tony");
+    button?.addEventListener("click", () => {
+      if (hi || !wide.matches) return;
+      button.setAttribute("disabled", "");
+      if (still.matches) {
+        // No flying for anyone who asked for less motion: just the word, then
+        // the donut back as it was.
+        pre.textContent = toText((() => {
+          const grid = new Array(ROWS * COLS).fill(" ");
+          for (const g of heyGlyphs()) plot(grid, g.c, g.r, g.ch);
+          return grid;
+        })());
+        setTimeout(() => {
+          pre.textContent = frame(A, B);
+          button.removeAttribute("disabled");
+        }, HOLD + 400);
+        return;
+      }
+      hi = { start: 0, flyers: null, hey: null, back: null };
+    });
 
     const sync = () => {
       if (wide.matches && !measure()) return;

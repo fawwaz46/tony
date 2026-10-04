@@ -86,6 +86,9 @@
 .hero .lede.sign { font-size: .92rem; color: var(--ink-4); margin-bottom: 2.25rem;
   line-height: 1.5; }
 .cta-row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+.hi-tony { display: none; align-self: stretch; }
+@media (min-width: 64rem) { .hi-tony { display: inline-flex; } }
+.hi-tony:disabled { cursor: default; border-color: var(--accent-line); }
 
 /* ---- a command you can copy ---- */
 .cmd { display: flex; align-items: stretch; border: 1px solid var(--rule-2);
