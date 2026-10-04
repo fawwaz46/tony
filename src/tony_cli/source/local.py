@@ -72,6 +72,48 @@ def withoutGeneratedBodies(diff: str) -> str:
         out.append(head if sep else chunk)
     return "".join(out)
 
+def fileChunks(diff: str):
+    """[(path, chunk)] — the diff cut at each `diff --git`, chunks kept whole.
+
+    The path is parsed the way `splitDiffByFile` parses it, so a path from here
+    can be looked up in anything built from that.
+    """
+    out = []
+    for chunk in re.split(r"^(?=diff --git )", diff, flags=re.MULTILINE):
+        if not chunk.startswith("diff --git "):
+            continue
+        header = chunk.split("\n", 1)[0][len("diff --git "):]
+        match = re.match(r'"?a/(.+?)"? +"?b/(.+?)"?$', header)
+        out.append((match.group(2) if match else header, chunk))
+    return out
+
+
+def onlyPaths(diff: str, paths) -> str:
+    """The same diff with every file outside `paths` left out."""
+    return "".join(chunk for path, chunk in fileChunks(diff) if path in paths)
+
+
+def splitIntoParts(diff: str, budget: int):
+    """Cut a diff into parts of at most `budget` characters, files kept whole.
+
+    Returns [[path, ...], ...] in diff order. Git orders files by path, so
+    consecutive files share directories and a part reads as one area of the
+    code rather than a random sample. A single file over budget gets a part to
+    itself — splitting inside a file would leave two reviewers each seeing half
+    of one function's change.
+    """
+    parts, current, size = [], [], 0
+    for path, chunk in fileChunks(diff):
+        if current and size + len(chunk) > budget:
+            parts.append(current)
+            current, size = [], 0
+        current.append(path)
+        size += len(chunk)
+    if current:
+        parts.append(current)
+    return parts
+
+
 def resolveRepo (repoPath: str) -> str :
     if not os.path.isdir(repoPath):
         raise ValueError(f"not a directory: {repoPath}")

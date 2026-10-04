@@ -17,6 +17,7 @@ file and search tools than tony ever shipped.
 
 import os
 import secrets
+import threading
 import time
 
 # The SDK renamed FastMCP to MCPServer in 2.0. The class is the same shape —
@@ -34,8 +35,8 @@ from tony_cli.anchors import anchorProblems
 from tony_cli.layout import isSkippable, itemsByPath, runCoverage
 from tony_cli.payload import buildPayload, dumpPayload
 from tony_cli.source.local import (
-    FAILED, getDiff, isDirty, resolveBase, resolveRepo, resolveRev,
-    splitDiffByFile, withoutGeneratedBodies,
+    FAILED, getDiff, isDirty, onlyPaths, resolveBase, resolveRepo, resolveRev,
+    splitDiffByFile, splitIntoParts, withoutGeneratedBodies,
 )
 
 # What `tony_start` established about the repo, held until `tony_publish` needs
@@ -48,6 +49,19 @@ from tony_cli.source.local import (
 # dies with one agent session, and a session that starts thousands of reviews
 # has a different problem.
 SESSIONS = {}
+
+# Parts of one review are published by separate subagents, which can call in
+# at the same moment. Only the bookkeeping on a split session is guarded — the
+# single-part path never shares a session between callers.
+PARTS_LOCK = threading.Lock()
+
+# The most diff, in characters, one agent is handed to review. Past this the
+# diff is split by file and each part goes to its own subagent. Roughly 40k
+# tokens: room left in a 200k window for the instructions, the files the agent
+# opens, the greps for impacts, and the review it writes. A diff that fills the
+# window does not fail cleanly — the harness compacts it mid-review, and the
+# annotations written after that are written from a summary of the code.
+PART_CHARS = 150_000
 
 NOT_LOGGED_IN = """\
 tony: this machine is not logged in, so there is nowhere to publish to.
@@ -91,17 +105,23 @@ def workingTreeProblem(root, head):
     return None
 
 
-def startReview(path=None, range=None, harness=("", "")):
+def startReview(path=None, range=None, harness=("", ""), sessionId=None, part=None):
     """Set up a review and return what the agent needs to write it.
 
     `harness` is (name, version) of the agent on the other end of this
     connection, for the provenance record — see `harnessOf`.
+
+    With `sessionId` and `part`, returns one part of a review that an earlier
+    call split — see `partReview`.
     """
     # Checked first, and deliberately before anything expensive: an agent that
     # writes a full review and only then learns it cannot be published has
     # spent the user's context for nothing.
     if not hosted.savedToken():
         return NOT_LOGGED_IN
+
+    if sessionId or part:
+        return partReview(sessionId, part)
 
     # Asked here rather than at the command line: `tony mcp` runs for a whole
     # agent session and prints to a stderr nobody reads, so the only way this
@@ -166,16 +186,193 @@ def startReview(path=None, range=None, harness=("", "")):
     forAgent = getDiff(root, base, head, wholeFunctions=True)
     if forAgent.startswith(FAILED):
         forAgent = diff
+    forAgent = withoutGeneratedBodies(forAgent)
 
-    return (
+    header = (
         f"sessionId: {sid}\n"
         f"repository: {os.path.basename(root)} at {root}\n"
         f"range: {base}...{head}\n"
         f"{updateLine(check)}\n"
+    )
+
+    split = splitIntoParts(forAgent, PART_CHARS)
+    if len(split) > 1:
+        SESSIONS[sid]["document"] = served["document"]
+        SESSIONS[sid]["parts"] = [{
+            "paths": set(paths),
+            "diff": onlyPaths(diff, set(paths)),
+            "forAgent": onlyPaths(forAgent, set(paths)),
+            "attempts": 0, "review": None, "gaps": [], "model": "",
+        } for paths in split]
+        return header + dispatch(sid, split)
+
+    return (
+        f"{header}"
         f"{served['document']}\n\n"
         "--- THE DIFF ---\n\n"
-        f"{withoutGeneratedBodies(forAgent)}"
+        f"{forAgent}"
     )
+
+
+# --- large diffs, in parts -------------------------------------------------
+#
+# Under agent-native the diff is spent out of the reviewer's own context
+# window, so a big enough change is not expensive, it is impossible: the
+# harness compacts partway through and the rest of the review is written from a
+# summary. So past PART_CHARS the review is split by file, each part goes to a
+# fresh subagent with a context of its own, and tony merges what they publish.
+#
+# The split sessions live in SESSIONS like any other, which assumes the
+# subagents reach the same `tony mcp` process as whoever called tony_start.
+# Harnesses that run subagents share their parent's MCP connections, so they do.
+
+def dispatch(sid, split):
+    """What the agent that called tony_start does with a diff too big for it."""
+    listed = "\n".join(
+        f"  part {n} — {len(paths)} file{'' if len(paths) == 1 else 's'}: "
+        + (paths[0] if len(paths) == 1 else f"{paths[0]} … {paths[-1]}")
+        for n, paths in enumerate(split, 1)
+    )
+    return (
+        f"This diff is too large to review well in one context, so tony has split "
+        f"it into {len(split)} parts.\n\n"
+        f"{listed}\n\n"
+        "Do not review it yourself. For EACH part, start a fresh subagent with "
+        "this task, in parallel if you can:\n\n"
+        f'  "Call tony_start with sessionId {sid} and part <n>. Follow the '
+        "instructions it returns, review only that part, and call tony_publish "
+        "with the same sessionId and part. When it is accepted, report back the "
+        'one-sentence intent you wrote."\n\n'
+        "When every part has been accepted, call tony_publish yourself with "
+        f'sessionId {sid}, no part, and review {{"intent": "..."}} — one sentence '
+        "for the whole change, written from the intents the subagents reported. "
+        "That publishes the page and returns its URL.\n\n"
+        "If you are yourself a subagent and cannot start subagents of your own, "
+        "stop here and return this whole message to the agent that started you: "
+        "it has to hand out the parts."
+    )
+
+
+def partReview(sessionId, part):
+    """One part of a split review: the instructions, and that part's diff."""
+    session = SESSIONS.get(sessionId) if sessionId else None
+    if session is None or not session.get("parts"):
+        return (
+            "tony: no such multi-part review. `sessionId` and `part` only go "
+            "together when an earlier tony_start split its diff into parts. To "
+            "begin a review, call tony_start with neither."
+        )
+    parts = session["parts"]
+    if not isinstance(part, int) or not 1 <= part <= len(parts):
+        return f"tony: `part` must be a number from 1 to {len(parts)}."
+
+    n, total = part, len(parts)
+    return (
+        f"sessionId: {sessionId}\n"
+        f"part: {n} of {total}\n"
+        f"repository: {os.path.basename(session['root'])} at {session['root']}\n"
+        f"range: {session['base']}...{session['head']}\n\n"
+        f"You are reviewing part {n} of {total} of one large diff. Other agents "
+        "are reviewing the rest in their own contexts, and tony merges the parts "
+        "into one page.\n\n"
+        "- Annotations, skips and anchored risks go only in the files of this "
+        "part — the diff below is exactly those files. tony_publish refuses "
+        "anything anchored in another part's files.\n"
+        "- Impacts and walkthroughs may reach anywhere in the repository. An "
+        "impact still must not point at a changed file, including one in "
+        "another part.\n"
+        "- Walkthroughs only for flows whose changed steps are mostly in this "
+        "part's files. A flow that starts in another part's files is that "
+        "reviewer's to trace, so the merged page shows each flow once.\n"
+        "- `intent` is one sentence on what this part does. When tony_publish "
+        "accepts the part, report that sentence back to whoever started you.\n\n"
+        f"Call tony_publish with sessionId {sessionId} and part {n}.\n\n"
+        f"{session['document']}\n\n"
+        "--- THE DIFF ---\n\n"
+        f"{parts[n - 1]['forAgent']}"
+    )
+
+
+def publishPart(session, sessionId, review, part, model):
+    """Validate one part and hold it until the rest arrive."""
+    parts = session["parts"]
+    if not isinstance(part, int) or not 1 <= part <= len(parts):
+        return f"tony: `part` must be a number from 1 to {len(parts)}."
+    p = parts[part - 1]
+
+    problems = validate(review)
+    if problems:
+        return rejection(problems, part)
+    # Against the whole diff, so an impact on a file in another part is still
+    # an impact on a changed file — then against this part, so two reviewers
+    # never explain the same file.
+    problems = (anchorProblems(review, session["diff"], session["root"])
+                + outsidePart(review, p["paths"], part))
+    if problems:
+        return rejection(problems, part)
+
+    gaps = coverageGaps(p["diff"], review)
+    if gaps:
+        p["attempts"] += 1
+        if p["attempts"] < MAX_ATTEMPTS:
+            return coverageRejection(gaps, p["attempts"], part)
+
+    p["review"], p["gaps"], p["model"] = review, gaps, (model or "").strip()
+    left = [str(i) for i, q in enumerate(parts, 1) if q["review"] is None]
+    shortfall = (
+        f" with {len(gaps)} block{'' if len(gaps) == 1 else 's'} still "
+        f"unexplained after {MAX_ATTEMPTS} attempts — the page will mark them"
+        if gaps else ""
+    )
+    return (
+        f"Part {part} of {len(parts)} accepted{shortfall}. Report your one-sentence "
+        "intent back to whoever started you; there is nothing else to do."
+        + (f" Parts still outstanding: {', '.join(left)}." if left else
+           f" It was the last part: the agent that started you now calls "
+           f"tony_publish with sessionId {sessionId} and no part to publish the page.")
+    )
+
+
+def outsidePart(review, paths, part):
+    """Everything this part anchored in a file that belongs to another part."""
+    problems = []
+    for field in ("annotations", "skips", "risks"):
+        for i, item in enumerate(review.get(field) or []):
+            if isinstance(item, dict) and item.get("path") and item["path"] not in paths:
+                problems.append(
+                    f"{field}[{i}] is anchored in {item['path']}, which belongs to "
+                    f"another part. Part {part} covers only the files in the diff "
+                    "you were given — remove it; that file has its own reviewer."
+                )
+    return problems
+
+
+def publishWhole(session, review, model):
+    """Merge every accepted part under one intent, and publish the page."""
+    intent = str((review or {}).get("intent") or "").strip() if isinstance(review, dict) else ""
+    if not intent:
+        return rejection([
+            "`intent` is missing — one sentence on what the whole change "
+            "accomplishes, written from the intents the part reviewers reported."
+        ])
+
+    parts = session["parts"]
+    left = [str(i) for i, p in enumerate(parts, 1) if p["review"] is None]
+    if left:
+        return (
+            f"tony: not published — part{'' if len(left) == 1 else 's'} "
+            f"{', '.join(left)} not accepted yet. Wait for those subagents, or "
+            "start one for each missing part, then call this again."
+        )
+
+    merged = {"intent": intent}
+    for field in ("annotations", "risks", "impacts", "skips", "walkthroughs"):
+        merged[field] = [x for p in parts for x in (p["review"].get(field) or [])]
+
+    gaps = [g for p in parts for g in p["gaps"]]
+    session["attempts"] = sum(p["attempts"] for p in parts)
+    model = model or next((p["model"] for p in parts if p["model"]), "")
+    return publishPage(session, merged, model, incompleteNotice(gaps) if gaps else "")
 
 
 def updateLine(check):
@@ -197,13 +394,24 @@ def updateLine(check):
     )
 
 
-def publishReview(review, sessionId=None, model=""):
+def publishReview(review, sessionId=None, model="", part=None):
     """Validate one review, then render and publish it. Returns text for the agent."""
     session = SESSIONS.get(sessionId) if sessionId else None
     if session is None:
         return (
             "tony: no such review session. Call tony_start first and pass back the "
             "sessionId it returned, unchanged."
+        )
+
+    if session.get("parts"):
+        with PARTS_LOCK:
+            if part:
+                return publishPart(session, sessionId, review, part, model)
+            return publishWhole(session, review, model)
+    if part:
+        return (
+            "tony: this review was not split into parts. Call tony_publish again "
+            "without `part`."
         )
 
     problems = validate(review)
@@ -230,6 +438,11 @@ def publishReview(review, sessionId=None, model=""):
         # `incompleteNotice`.
         incomplete = incompleteNotice(gaps)
 
+    return publishPage(session, review, model, incomplete)
+
+
+def publishPage(session, review, model, incomplete=""):
+    """Render a review that has passed the gate, upload it, and say where it went."""
     root, base, head = session["root"], session["base"], session["head"]
     rangeLabel = f"{base or 'default'}...{head}"
     payload = buildPayload(review, session["diff"], root, rangeLabel)
@@ -338,7 +551,7 @@ def coverageGaps(diff, review):
     return gaps
 
 
-def coverageRejection(gaps, attempt):
+def coverageRejection(gaps, attempt, part=None):
     """A refusal naming every block, because the reader has to go fix them."""
     shown = gaps[:MAX_LISTED]
     listed = "\n".join(
@@ -358,7 +571,7 @@ def coverageRejection(gaps, attempt):
         "reason.\n\n"
         "Do not pad. An annotation that restates the syntax is worse than a "
         "skip that is honest.\n\n"
-        f"Then call tony_publish again with the same sessionId. "
+        f"Then call tony_publish again with the same sessionId{again(part)}. "
         f"{left} attempt{'' if left == 1 else 's'} left."
     )
 
@@ -464,13 +677,18 @@ def annotationProblems(i, note):
     return problems
 
 
-def rejection(problems):
+def again(part):
+    """How a retry names what it is retrying."""
+    return f" and part {part}" if part else ""
+
+
+def rejection(problems, part=None):
     """A refusal that can be acted on: what is wrong, then what to do about it."""
     listed = "\n".join(f"  - {p}" for p in problems)
     count = f"{len(problems)} problem{'' if len(problems) == 1 else 's'}"
     return (
         f"tony: not published — {count} to fix.\n\n{listed}\n\n"
-        "Fix exactly these and call tony_publish again with the same sessionId. "
+        f"Fix exactly these and call tony_publish again with the same sessionId{again(part)}. "
         "Nothing else about the review needs to change, and the diff has not moved."
     )
 
@@ -497,6 +715,11 @@ reviewing its own work explains what it meant to do; a clean context sees only w
 is actually there, which is what the reader is going to have to live with. Spawn a \
 subagent, have it call tony_start and tony_publish, and report back the URL.
 
+A large diff comes back split into parts rather than as one diff, because it is \
+too big for one context to review well. The response says what to do: each part \
+goes to its own fresh subagent, which calls tony_start and tony_publish with the \
+sessionId and its part; then one tony_publish without a part publishes the page.
+
 Expect to read files. The instructions returned will tell you to open every changed \
 file in full and grep for consumers of anything whose shape changed — that is where \
 the blast radius comes from, and it cannot be had from the diff alone."""
@@ -514,7 +737,9 @@ missing annotations, unexplained hunks, fields that do not match the kind — an
 nothing is lost when it happens: fix those items and call this again with the same \
 sessionId. The diff does not move between attempts.
 
-Call it once, when the whole review is written. It is not incremental."""
+Call it once, when the whole review is written. The one exception is a review \
+tony_start split into parts: each part is published with its `part` number, and \
+then once more without one, with only the overall `intent`, to publish the page."""
 
 
 def buildServer():
@@ -523,7 +748,8 @@ def buildServer():
     # `ctx` is injected by the SDK and kept out of the tool's schema, so the
     # agent never sees it. It is how the server learns which harness is calling.
     @server.tool(name="tony_start", description=START_DESCRIPTION)
-    def tony_start(path: str = "", range: str = "", ctx: Context = None) -> str:
+    def tony_start(path: str = "", range: str = "", sessionId: str = "",
+                   part: int = 0, ctx: Context = None) -> str:
         """
         Args:
             path: Repository path, or any directory inside it. Defaults to the
@@ -531,11 +757,16 @@ def buildServer():
             range: What to diff, in git's range syntax — "main...HEAD". A bare
                 branch name means "that branch...HEAD". Omit for the repo's
                 default branch.
+            sessionId: Only to fetch one part of a review tony_start split.
+                Leave empty to begin a review.
+            part: Which part to fetch, with sessionId. Leave 0 otherwise.
         """
-        return startReview(path or None, range or None, harness=harnessOf(ctx))
+        return startReview(path or None, range or None, harness=harnessOf(ctx),
+                           sessionId=sessionId or None, part=part or None)
 
     @server.tool(name="tony_publish", description=PUBLISH_DESCRIPTION)
-    def tony_publish(review: dict, sessionId: str, model: str = "") -> str:
+    def tony_publish(review: dict, sessionId: str, model: str = "",
+                     part: int = 0) -> str:
         """
         Args:
             review: The review object, matching the schema tony_start supplied.
@@ -544,8 +775,11 @@ def buildServer():
                 example "claude-opus-5". Recorded with the review so tony can
                 tell which models write good ones. Leave empty if you do not
                 know it; never guess.
+            part: The part number, when publishing one part of a split
+                review. Leave 0 to publish a whole review, or to publish the
+                page once every part is in.
         """
-        return publishReview(review, sessionId, model)
+        return publishReview(review, sessionId, model, part or None)
 
     return server
 

@@ -623,3 +623,105 @@ def test_a_harness_that_will_not_identify_itself_is_not_an_error():
 
     assert mcp_server.harnessOf(None) == ("", "")
     assert mcp_server.harnessOf(Nothing()) == ("", "")
+
+
+# --- large diffs, in parts -------------------------------------------------
+#
+# Under agent-native a big enough diff is not expensive, it is impossible: it
+# overflows the reviewer's own context. Past a budget the review is split by
+# file, one subagent per part, and tony merges what they publish.
+
+def splitRepo(tmp_path, monkeypatch):
+    """Three changed files, each over a tiny budget, so each is its own part."""
+    repo = makeRepo(tmp_path)
+    for name in ("a.py", "b.py", "c.py"):
+        (repo / name).write_text("".join(f"v{n} = {n}\n" for n in range(6)))
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "c2"], check=True)
+    monkeypatch.setattr(mcp_server, "PART_CHARS", 50)
+    return repo
+
+
+def partReview(path):
+    return {"intent": f"Adds {path}.",
+            "annotations": [note(path=path, line=1, now="six constants")]}
+
+
+def test_a_large_diff_is_handed_out_in_parts(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    session = mcp_server.SESSIONS[sid]
+    assert [sorted(p["paths"]) for p in session["parts"]] == [["a.py"], ["b.py"], ["c.py"]]
+
+
+def test_the_dispatcher_is_not_given_the_diff(tmp_path, monkeypatch):
+    """Whoever called tony_start only hands out parts. The diff in its context
+    would be the very overflow the split exists to prevent."""
+    repo = splitRepo(tmp_path, monkeypatch)
+    started(repo, monkeypatch)
+    out = startReview(str(repo), "HEAD~1...HEAD")
+    assert "3 parts" in out and "part <n>" in out
+    assert "--- THE DIFF ---" not in out and "v0 = 0" not in out
+
+
+def test_a_part_carries_only_its_own_files(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    out = startReview(sessionId=sid, part=2)
+    assert "part: 2 of 3" in out and "D" in out
+    assert "b/b.py" in out and "b/a.py" not in out and "b/c.py" not in out
+
+
+def test_a_part_out_of_range_is_refused(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    assert "from 1 to 3" in startReview(sessionId=sid, part=4)
+    assert "from 1 to 3" in mcp_server.publishReview(partReview("a.py"), sid, part=9)
+
+
+def test_a_part_may_not_explain_another_parts_file(tmp_path, monkeypatch):
+    """Two reviewers explaining one file is two answers to one question."""
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    out = mcp_server.publishReview(partReview("b.py"), sid, part=1)
+    assert "belongs to another part" in out and "part 1" in out
+
+
+def test_a_part_with_gaps_is_sent_back_by_part(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    out = mcp_server.publishReview({"intent": "i", "annotations": []}, sid, part=1)
+    assert "a.py:1-6" in out and "same sessionId and part 1" in out
+    assert "b.py" not in out
+
+
+def test_the_page_waits_for_every_part(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    assert "accepted" in mcp_server.publishReview(partReview("a.py"), sid, part=1)
+    out = mcp_server.publishReview({"intent": "Adds three files."}, sid)
+    assert "not published" in out and "2, 3" in out
+
+
+def test_the_parts_publish_as_one_page(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    sent = capturePublish(monkeypatch)
+
+    mcp_server.publishReview({"intent": "i", "annotations": []}, sid, part=3)
+    for n, path in enumerate(("a.py", "b.py", "c.py"), 1):
+        out = mcp_server.publishReview(partReview(path), sid, part=n, model="m")
+    assert "last part" in out
+
+    assert "Published:" in mcp_server.publishReview({"intent": "Adds three files."}, sid)
+    assert sent["intent"] == "Adds three files."
+    assert [a["path"] for a in sent["annotations"]] == ["a.py", "b.py", "c.py"]
+    assert sent["coverage"]["unexplainedLines"] == 0
+    assert sent["provenance"]["retries"] == 1
+    assert sent["provenance"]["model"] == "m"
+
+
+def test_the_whole_page_needs_its_own_intent(tmp_path, monkeypatch):
+    sid = started(splitRepo(tmp_path, monkeypatch), monkeypatch)
+    for n, path in enumerate(("a.py", "b.py", "c.py"), 1):
+        mcp_server.publishReview(partReview(path), sid, part=n)
+    assert "`intent` is missing" in mcp_server.publishReview({}, sid)
+
+
+def test_part_on_a_review_that_was_not_split_is_refused(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    assert "not split into parts" in mcp_server.publishReview(covered(), sid, part=1)
+
