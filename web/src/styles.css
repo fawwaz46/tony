@@ -166,7 +166,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .stepper button{font:400 .8rem/1 var(--mono);background:none;border:1px solid var(--rule-2);
   color:var(--ink-3);cursor:pointer;padding:.25em .6em}
 .stepper button:hover{border-color:var(--rule-3);color:var(--ink)}
-.stepper .sh{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stepper .sh{color:var(--ink-3);overflow-wrap:anywhere;min-width:0}
 
 /* ---- flows ----
    Swiss: a strict grid, heavy rules where a section starts, everything
@@ -192,8 +192,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .fi[aria-current]{color:var(--ink);box-shadow:inset 2px 0 0 var(--ink)}
 .fi:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
 .fi .ix{font:400 .7rem/1 var(--mono);color:var(--ink-4);padding-left:.9rem}
-.fi .ft{font-size:1.05rem;font-weight:500;letter-spacing:-.015em;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
+.fi .ft{font-size:1.05rem;font-weight:500;letter-spacing:-.015em;text-wrap:balance}
 .fi .fn{font:400 .65rem/1 var(--mono);color:var(--ink-4);text-align:right}
 .strip{display:flex;gap:2px}
 .strip i{width:.5rem;height:.5rem;background:var(--rule-3)}
@@ -209,6 +208,14 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .wt[hidden]{display:none}
 .wth{margin-bottom:2.25rem}
 .wth .cap .fr{margin-left:1rem}
+/* Flow-to-flow navigation, in the eyebrow, because the index scrolls away. */
+.wth .cap{display:flex;align-items:center;flex-wrap:wrap;gap:.25rem 0}
+.fnav{margin-left:auto;display:flex;gap:.5rem}
+.fnav button{font:500 .6rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  background:none;color:var(--ink-3);border:1px solid var(--rule-2);padding:.55rem .8rem;cursor:pointer}
+.fnav button:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
+.fnav button:disabled{color:var(--rule-3);border-color:var(--rule);cursor:default}
+.fnav button:focus-visible{outline:1px solid var(--rule-3);outline-offset:2px}
 .wth h3{margin:0 0 1.25rem;font-size:clamp(1.6rem,3.2vw,2.4rem);font-weight:700;
   letter-spacing:-.045em;line-height:1.02;color:var(--ink);max-width:22ch;text-wrap:balance}
 .wmeta{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;border-top:1px solid var(--rule);
@@ -240,7 +247,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .lanes{display:grid;grid-template-columns:3rem repeat(var(--lanes),minmax(0,1fr));
   border-bottom:1px solid var(--rule);background:var(--s2)}
 .lane{padding:.75rem .5rem;text-align:center;font:500 .6rem/1.2 var(--mono);letter-spacing:.14em;
-  text-transform:uppercase;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  text-transform:uppercase;color:var(--ink-2);overflow-wrap:anywhere;align-self:end}
 .rows{padding:.5rem 0 .75rem}
 /* A phone fits three lanes without scrolling; more than that scroll inside
    the diagram's own box, never the page. */
@@ -262,8 +269,8 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .srow[aria-current]{background:var(--s3);--row-bg:var(--s3)}
 .srow[aria-current].same{color:var(--ink)}
 .srow:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
-.srow .sn{font:400 .62rem/1 var(--mono);color:var(--ink-4);align-self:center;text-align:right;
-  padding-right:.9rem}
+.srow .sn{font:400 .62rem/1 var(--mono);color:var(--ink-4);align-self:start;text-align:right;
+  padding:.85rem .9rem 0 0}
 .srow[aria-current] .sn{color:var(--ink)}
 .track{position:relative;display:block;overflow:hidden;
   background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--rule-2) calc(50% - .5px),
@@ -286,17 +293,21 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .srow.removed .arrow{background:none;border-top:1px dashed currentColor;height:0}
 .srow.removed .arrow::after{top:-4px}
 .srow[aria-current] .arrow{height:2px;top:calc(1.15rem - .5px)}
-/* A step's label hangs under its arrow, on the row's own surface so the
-   lifelines it crosses stop at the text rather than running through it, and
-   it ends at the diagram's edge in an ellipsis. A step that stays in a lane
-   right of centre hangs its label leftward instead, or it would get half a
-   lane to say anything in. */
-.slab{position:absolute;top:1.85rem;left:calc((var(--from) + .5) * 100% / var(--lanes) - .35rem);
-  width:max-content;max-width:calc((var(--lanes) - var(--from) - .5) * 100% / var(--lanes) - .25rem);
-  font-size:.72rem;line-height:1.3;color:var(--ink-4);overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;padding:0 .35rem;background:var(--row-bg)}
-.srow.rt .slab{left:auto;right:calc((var(--lanes) - var(--a) - .5) * 100% / var(--lanes) - .35rem);
-  max-width:calc((var(--a) + .5) * 100% / var(--lanes))}
+/* A step's label sits under its arrow, on the row's own surface so the
+   lifelines it crosses stop at the text rather than running through it. It
+   is in the row's flow, not over it: a long label wraps and the row grows,
+   because a step you cannot read all of is a step that is not there. A step
+   that stays in a lane right of centre hangs its label leftward instead, or
+   it would get half a lane to say anything in. */
+.track{padding:1.85rem 0 .7rem}
+.slab{position:relative;display:block;width:fit-content;
+  margin-left:calc((var(--from) + .5) * 100% / var(--lanes) - .35rem);
+  max-width:calc((var(--lanes) - var(--from) - .5) * 100% / var(--lanes) + .35rem);
+  font-size:.72rem;line-height:1.4;color:var(--ink-4);white-space:normal;
+  padding:0 .35rem;background:var(--row-bg);text-wrap:pretty}
+.srow.rt .slab{margin-left:auto;text-align:right;
+  margin-right:calc((var(--lanes) - var(--a) - .5) * 100% / var(--lanes) - .35rem);
+  max-width:calc((var(--a) + .5) * 100% / var(--lanes) + .35rem)}
 .srow[aria-current] .slab{color:var(--ink-2)}
 .srow.future .slab{color:var(--rule-3)}
 .srow.draw .arrow{animation:flow-draw .55s cubic-bezier(.2,.7,.2,1)}
@@ -386,7 +397,8 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .tw{flex:none;width:.6rem;color:var(--rule-3);transition:transform .12s ease}
 .tw::before{content:"\25be"}
 .tdh[aria-expanded="false"] .tw{transform:rotate(-90deg)}
-.tnm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Names wrap rather than truncate: a path you cannot read is a file you cannot find. */
+.tnm{flex:1;min-width:0;overflow-wrap:anywhere}
 .tfb .tnm{color:var(--ink-2)}
 .ti{flex:none;width:.7rem;text-align:center;color:var(--ink-4);font-weight:500}
 .ti.added{color:var(--pos)}

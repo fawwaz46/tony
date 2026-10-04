@@ -562,7 +562,12 @@ function renderFlow(w: any, idx: number, total: number): string {
 <section class="wt" data-w="${idx}"${idx === 0 ? "" : " hidden"} style="--lanes:${actors.length}">
   <header class="wth">
     <div class="wtt">
-      <p class="cap">[ flow ${pad2(idx + 1)} / ${pad2(total)} ]<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span></p>
+      <p class="cap">[ flow ${pad2(idx + 1)} / ${pad2(total)} ]<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span>${
+        total > 1
+          ? `<span class="fnav"><button class="fgo" data-to="${idx - 1}"${idx === 0 ? " disabled" : ""}>&#8249; Previous flow</button>` +
+            `<button class="fgo" data-to="${idx + 1}"${idx === total - 1 ? " disabled" : ""}>Next flow &#8250;</button></span>`
+          : ""
+      }</p>
       <h3>${esc(w.title || "Walkthrough")}</h3>
       <div class="wmeta">
         <p><span class="tl">Starts when</span>${esc(w.trigger)}</p>
@@ -708,16 +713,25 @@ function initFlows(root: HTMLElement): void {
     return { wt, go: (d: number) => go(at + d), stop };
   });
 
-  // Choosing a flow from the index shows that one alone.
+  // One flow on screen at a time, chosen from the index or stepped to from
+  // the flow itself — the index has usually scrolled out of sight by then.
+  const showFlow = (w: string, scroll: boolean) => {
+    const target = players.find((p) => p.wt.dataset.w === w);
+    if (!target) return;
+    players.forEach((p) => {
+      p.stop();
+      p.wt.hidden = p !== target;
+    });
+    root.querySelectorAll<HTMLElement>(".fi").forEach((x) =>
+      x.toggleAttribute("aria-current", x.dataset.w === w),
+    );
+    if (scroll) target.wt.scrollIntoView?.({ block: "start" });
+  };
   root.querySelectorAll<HTMLElement>(".fi").forEach((b) => {
-    b.onclick = () => {
-      const w = b.dataset.w;
-      players.forEach((p) => {
-        p.stop();
-        p.wt.hidden = p.wt.dataset.w !== w;
-      });
-      root.querySelectorAll(".fi").forEach((x) => x.toggleAttribute("aria-current", x === b));
-    };
+    b.onclick = () => showFlow(b.dataset.w!, false);
+  });
+  root.querySelectorAll<HTMLButtonElement>(".fgo").forEach((b) => {
+    b.onclick = () => showFlow(b.dataset.to!, true);
   });
 
   document.addEventListener("keydown", (e) => {
