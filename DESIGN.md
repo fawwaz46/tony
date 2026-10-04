@@ -183,8 +183,7 @@ mono eyebrow in accent; the kind tag and line range follow in `--ink-4`. Multi-p
 flat prose and no tabs.
 
 **Flow** (the How it works tab) — Swiss, more than anywhere else on the page: a 2px `--ink`
-rule where each flow starts, its number at display size (`7.5rem`, 700, `-.07em`), the title
-beside it, and *Starts when* / *What changed* as two flush-left columns under a hairline. With
+rule where each flow starts, the title under its `[ FLOW 01 / 02 ]` eyebrow, and *Starts when* / *What changed* as two flush-left columns under a hairline. With
 more than one flow, an index table sits above: `[01]` · title · reach · a strip of one square
 per step coloured by phase · step count.
 

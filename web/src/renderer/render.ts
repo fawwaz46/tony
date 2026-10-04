@@ -561,7 +561,6 @@ function renderFlow(w: any, idx: number, total: number): string {
   return `
 <section class="wt" data-w="${idx}"${idx === 0 ? "" : " hidden"} style="--lanes:${actors.length}">
   <header class="wth">
-    <div class="big">${pad2(idx + 1)}</div>
     <div class="wtt">
       <p class="cap">[ flow ${pad2(idx + 1)} / ${pad2(total)} ]<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span></p>
       <h3>${esc(w.title || "Walkthrough")}</h3>

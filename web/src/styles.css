@@ -169,8 +169,8 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .stepper .sh{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---- flows ----
-   Swiss: a strict grid, heavy rules where a section starts, numerals at
-   display size, everything flush left. Colour stays information — green for
+   Swiss: a strict grid, heavy rules where a section starts, everything
+   flush left. Colour stays information — green for
    a step the change added, the accent for one it altered, red dashed for one
    it removed — the same three things the diff itself is coloured by. */
 .tl{font-family:var(--mono);font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;
@@ -207,9 +207,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 
 .wt{border-top:2px solid var(--ink);padding:1.5rem 0 3rem}
 .wt[hidden]{display:none}
-.wth{display:grid;grid-template-columns:minmax(0,11rem) minmax(0,1fr);gap:2rem;margin-bottom:2.25rem}
-.wth .big{font-size:clamp(4rem,9vw,7.5rem);font-weight:700;letter-spacing:-.07em;
-  line-height:.78;color:var(--ink)}
+.wth{margin-bottom:2.25rem}
 .wth .cap .fr{margin-left:1rem}
 .wth h3{margin:0 0 1.25rem;font-size:clamp(1.6rem,3.2vw,2.4rem);font-weight:700;
   letter-spacing:-.045em;line-height:1.02;color:var(--ink);max-width:22ch;text-wrap:balance}
@@ -218,8 +216,6 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .wmeta p{margin:0;font-size:.9rem;color:var(--ink-2);line-height:1.5;max-width:52ch}
 .wmeta .tl{display:block;margin-bottom:.45rem}
 @media (max-width:52rem){
-  .wth{grid-template-columns:1fr;gap:.75rem}
-  .wth .big{font-size:3.75rem}
   .wmeta{grid-template-columns:1fr;gap:1rem}
 }
 
