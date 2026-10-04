@@ -115,15 +115,14 @@ const when = (d: string) =>
   new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 ---
 
-<Shell title="Provenance — tony" wide={true}>
+<Shell title="Provenance · tony" wide={true}>
   <section class="sec" style="border:0">
     <p class="cap">[ provenance ]</p>
     <h2 class="big">What is writing the reviews.</h2>
     <p class="body">
       One row per published review, recorded at <code>tony_publish</code>. Coverage
       is the share of changed lines a review explained, averaged per review.
-      Turn count and token spend are not here — they happen inside the caller's
-      context and nothing on this side can see them.
+      Turn count and token spend aren't recorded. They happen inside the agent.
     </p>
 
     {totals && (

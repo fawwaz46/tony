@@ -37,15 +37,14 @@ try {
 }
 ---
 
-<Shell title="Review — tony" wide={true}>
+<Shell title="Review · tony" wide={true}>
   {
     !user ? (
       <section class="sec" style="border:0">
         <p class="cap">[ review · {id} ]</p>
         <h2 class="big">Sign in to read this review.</h2>
         <p class="body">
-          Reviews are readable by anyone with an account and the link. You'll come
-          straight back here.
+          Anyone with an account and the link can read it. You'll land right back here.
         </p>
         <a class="btn" href={`/api/auth/start?next=${encodeURIComponent(here)}`}>
           Sign in with GitHub
@@ -56,8 +55,7 @@ try {
         <p class="cap">[ review ]</p>
         <h2 class="big">This review doesn't exist.</h2>
         <p class="body">
-          It may have been deleted by whoever published it, or the link may be
-          incomplete.
+          It was deleted, it expired after 30 days, or the link is incomplete.
         </p>
         <a class="btn quiet" href="/reviews">Your reviews</a>
       </section>

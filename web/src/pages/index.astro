@@ -17,7 +17,7 @@ const error = Astro.url.searchParams.get("error");
 
 <Shell
   title="tony"
-  description="Ask your coding agent to review a branch. tony turns it into a page: every change explained, the blast radius, and steppable runtime walkthroughs."
+  description="Your coding agent reviews a branch. tony turns the review into a page you can actually read."
 >
   <section class="hero">
     <div class="hero-copy">
@@ -29,8 +29,8 @@ const error = Astro.url.searchParams.get("error");
         Tony :)
       </p>
       <p class="lede note">
-        * Updates and improvements coming soon; excited to see how efficient I can get this.
-        Reach out to me on X (<a href="https://x.com/46waz" rel="me">@46waz</a>) for access.
+        * More coming soon. Message me on X (<a href="https://x.com/46waz" rel="me">@46waz</a>)
+        for access.
       </p>
       <p class="lede sign">Best,<br />Fawwaz</p>
       <div class="cta-row">
@@ -56,37 +56,24 @@ const error = Astro.url.searchParams.get("error");
     <p class="cap">[ what you get ]</p>
     <h2 class="big">Three views of one change.</h2>
     <p class="body">
-      Every review is one page with three tabs. The prose is written by a model that
-      read your files; every line number, span, and changed/added tag is computed
-      from the diff itself, so the explanation can drift but the code never can.
+      One page, three tabs. A model writes the explanations. Line numbers come straight
+      from the diff, so they can't be wrong.
     </p>
     <div class="three">
       <div>
         <span class="n">[01]</span>
         <h3>File changes</h3>
-        <p>
-          The diff per file, with explanations sitting inline above the lines they
-          describe. Modified code gets Prev / New / Changes panes so you can see what
-          the behaviour used to be.
-        </p>
+        <p>Every file in the diff, with a note above each change: what it does now and what it did before.</p>
       </div>
       <div>
         <span class="n">[02]</span>
         <h3>Blast radius</h3>
-        <p>
-          Files the change reaches that aren't in the diff. Each consumer is read and
-          classified as breaks, behaves differently, or compatible, then shown at the
-          exact line that depends on what moved.
-        </p>
+        <p>Code outside the diff that uses what changed, marked broken, different, or fine.</p>
       </div>
       <div>
         <span class="n">[03]</span>
         <h3>How it works</h3>
-        <p>
-          Every flow the change adds, alters or removes, drawn across the parts of the
-          system it passes through. Step through it, or flip between before and after,
-          with the source read from your disk beside each step.
-        </p>
+        <p>Each flow the change touches, step by step, before and after.</p>
       </div>
     </div>
   </section>
@@ -94,15 +81,11 @@ const error = Astro.url.searchParams.get("error");
   <section class="sec">
     <p class="cap">[ example ]</p>
     <h2 class="big">Check it out.</h2>
-    <p class="body">
-      A review of a real change to an open-source HTTP library, covering how the server
-      handles a client that hangs up mid-connection. Switch the tabs, step through the
-      walkthrough.
-    </p>
+    <p class="body">A real review of a small payments change. Click around.</p>
     <div class="demo">
       <div class="demo-bar">
         <span class="dot3"><i></i><i></i><i></i></span>
-        <span>httpx · origin/v1...HEAD</span>
+        <span>payments-api · main...HEAD</span>
         <span class="live">try the tabs</span>
       </div>
       <div class="demo-scroll"><div id="demo-root"></div></div>
@@ -113,15 +96,13 @@ const error = Astro.url.searchParams.get("error");
     <p class="cap">[ using it ]</p>
     <h2 class="big">Set it up once. Then just ask.</h2>
     <p class="body">
-      tony doesn't call a model. Your coding agent writes the review. tony hands it
-      the diff, holds it to a standard, and turns the answer into a page you can send
-      someone. There's no API key.
+      tony doesn't call a model. Your coding agent writes the review, and tony turns it
+      into a page you can share. No API key.
     </p>
     <div class="three">
       <div>
         <span class="n">[01]</span>
         <h3>Install</h3>
-        <p style="margin-bottom:.75rem">Puts the <code>tony</code> command on your machine.</p>
         <div class="cmd">
           <code><span class="p">$ </span>curl -fsSL https://tony-cli.com/install.sh | sh</code>
         </div>
@@ -130,19 +111,14 @@ const error = Astro.url.searchParams.get("error");
         <span class="n">[02]</span>
         <h3>Connect and sign in</h3>
         <p style="margin-bottom:.75rem">
-          Registers tony with Claude Code, Cursor, Amp, Codex — whichever you have — then
-          opens a browser once. <b>Restart your agent after</b>: it reads its list of
-          tools only at startup.
+          Works with Claude Code, Cursor, Amp and Codex. <b>Restart your agent after.</b>
         </p>
         <div class="cmd"><code><span class="p">$ </span>tony connect &amp;&amp; tony login</code></div>
       </div>
       <div>
         <span class="n">[03]</span>
         <h3>Ask</h3>
-        <p style="margin-bottom:.75rem">
-          Not a command — say it however you would have anyway. The agent reads the
-          changed files, writes the review, and hands you back a link.
-        </p>
+        <p style="margin-bottom:.75rem">Ask your agent. You get a link back.</p>
         <div class="cmd"><code><span class="p">&gt; </span>review this branch with tony</code></div>
       </div>
     </div>
@@ -151,36 +127,28 @@ const error = Astro.url.searchParams.get("error");
   <section class="sec">
     <p class="cap">[ commands ]</p>
     <h2 class="big">Everything it does.</h2>
-    <p class="body">
-      Reviewing isn't in this list, because it isn't a command any more — you ask your
-      agent. These are the things you run yourself, nearly all of them once.
-    </p>
+    <p class="body">Your agent runs the reviews. These are the only commands you'll need.</p>
     <div class="three two">
       <div>
         <h3>Setup</h3>
         <div class="cmd"><code><span class="p">$ </span>tony connect</code></div>
         <p class="body">
-          Connects tony to every agent it knows about. Name one — <code>claude</code>,
-          <code>cursor</code>, <code>amp</code>, <code>codex</code> — to do just that one.
+          Connects every agent it finds. Add <code>claude</code>, <code>cursor</code>,
+          <code>amp</code> or <code>codex</code> to pick one.
         </p>
         <div class="cmd"><code><span class="p">$ </span>tony login</code></div>
-        <p class="body">
-          Opens a browser. The page tells you when your terminal is ready.
-        </p>
+        <p class="body">Signs you in through your browser.</p>
       </div>
       <div>
         <h3>Housekeeping</h3>
         <div class="cmd"><code><span class="p">$ </span>tony --help</code></div>
-        <p class="body">Every command and flag.</p>
+        <p class="body">All commands.</p>
         <div class="cmd"><code><span class="p">$ </span>tony update</code></div>
-        <p class="body">
-          Upgrade, using whichever installer you used. Every other command
-          checks for a release in the background and says so.
-        </p>
+        <p class="body">Updates tony.</p>
         <div class="cmd"><code><span class="p">$ </span>tony logout</code></div>
-        <p class="body">Revokes this machine's token, then forgets it locally.</p>
+        <p class="body">Signs this machine out.</p>
         <div class="cmd"><code><span class="p">$ </span>tony uninstall</code></div>
-        <p class="body">Removes tony and everything it saved. It asks first.</p>
+        <p class="body">Removes tony and everything it saved.</p>
       </div>
     </div>
   </section>

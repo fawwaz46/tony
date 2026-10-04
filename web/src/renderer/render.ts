@@ -161,7 +161,7 @@ function renderFiles(files: any[], annotations: any[], risks: any[], skips: any[
       const safeNote = (i: number, source: any[]) => source[i] ?? {};
       let inner: string;
       if (f.binary) {
-        inner = '<p class="bin">Binary — not shown.</p>';
+        inner = '<p class="bin">Binary file, not shown.</p>';
       } else if (blocks.length === 0) {
         inner = '<p class="bin">No textual changes.</p>';
       } else {
@@ -501,8 +501,8 @@ function renderFlowIndex(walkthroughs: any[]): string {
     .join("");
   return (
     `<div class="flows-head"><p class="cap">[ flows · ${walkthroughs.length} ]</p>` +
-    `<p class="fhint">Each flow follows one real scenario through the system, one step at a time. ` +
-    `Before you press next, guess what happens — that guess is what makes it stick.</p></div>` +
+    `<p class="fhint">Each flow follows one real scenario, one step at a time. ` +
+    `Guess what happens before you press next.</p></div>` +
     `<div class="findex">${rows}</div>`
   );
 }

@@ -4,80 +4,57 @@
 import Shell from "../layouts/Shell.astro";
 ---
 
-<Shell title="Privacy — tony" description="What tony stores, who can read it, and how to delete it.">
+<Shell title="Privacy · tony" description="What tony stores, who can read it, and how to delete it.">
   <section class="sec">
     <p class="cap">[ privacy ]</p>
     <h2 class="big">What tony stores.</h2>
+  </section>
+
+  <section class="sec">
+    <p class="cap">[ on your machine ]</p>
     <p class="body">
-      Written plainly, because you are trusting tony with source code.
+      tony doesn't call a model. Your agent reads your code where it already is. tony
+      sends nothing to a model provider.
     </p>
   </section>
 
   <section class="sec">
-    <p class="cap">[ what happens on your machine ]</p>
+    <p class="cap">[ what gets uploaded ]</p>
     <p class="body">
-      tony does not call a model. Your coding agent reads the diff and the
-      changed files where they already are, inside whatever tool you have
-      already trusted with the repository, and writes the review there. tony
-      sends nothing to a model provider, and holds no key to one.
+      Publishing a review uploads it here. It includes the diff and the code around
+      each change, so your source code is stored on this site.
+    </p>
+    <p class="body">
+      tony also keeps your username, avatar, and account id; each review's repo name,
+      range, and summary; which agent and model wrote it; and your sign-in session.
+      tony never sees your password.
     </p>
   </section>
 
   <section class="sec">
-    <p class="cap">[ publishing ]</p>
+    <p class="cap">[ protection ]</p>
     <p class="body">
-      A finished review is uploaded to this site, which is what produces the
-      link you can send someone. That needs an account.
+      Reviews are encrypted with AES-256-GCM in a private store. Sign-in tokens are
+      stored only as hashes.
     </p>
     <p class="body">
-      A published review carries the diff and windows of the source around every
-      line it explains. That is real source code, and it is stored here.
-    </p>
-    <p class="body">
-      tony also stores your username, user id, and avatar URL from wherever you
-      signed in; the repo name, branch range, and one-line summary of each
-      review; a record of which agent and model wrote it; and a session when you
-      sign in. tony never receives your password, and the token from signing in
-      is used once to ask who you are and then discarded.
-    </p>
-  </section>
-
-  <section class="sec">
-    <p class="cap">[ how it is protected ]</p>
-    <p class="body">
-      Reviews are encrypted before storage with AES-256-GCM and kept in a
-      private store that is not reachable by URL. Sign-in tokens are stored
-      only as hashes, so a copy of the database yields nothing that can be
-      replayed.
-    </p>
-    <p class="body">
-      <b>What that does not protect against:</b> tony holds the key. Anyone who
-      can run code on this server, and any lawful demand made to tony, can
-      reach a review. This is protection against a leak, not against tony. Do
-      not publish from a repository you could not share with tony.
+      <b>tony holds the key.</b> Anyone who can run code on this server, or a legal
+      demand to tony, can read a review. Don't publish code you couldn't share with tony.
     </p>
   </section>
 
   <section class="sec">
     <p class="cap">[ who can read a review ]</p>
-    <p class="body">
-      Anyone signed in who has the link. Review ids are random and unguessable,
-      so a link is what grants access. Treat it like a password.
-    </p>
+    <p class="body">Anyone signed in with the link. Treat it like a password.</p>
   </section>
 
   <section class="sec">
     <p class="cap">[ deleting ]</p>
     <p class="body">
-      Delete any review from <a href="/reviews">your reviews</a>. Deleting
-      removes the stored review and its metadata, and the link stops working
-      immediately. To delete your account and everything in it, use the button
-      at the bottom of the same page. It takes effect at once.
+      Reviews are deleted automatically after 30 days. You can delete one sooner, or
+      delete your whole account, from <a href="/reviews">your reviews</a>. Both take
+      effect immediately.
     </p>
-    <p class="body">
-      Reviews are kept for 30 days after they are published, then deleted
-      automatically, and their links stop working. tony sells nothing, and
-      there is no advertising or third-party analytics on this site.
-    </p>
+    <p class="body">No ads, no third-party analytics, nothing sold.</p>
   </section>
 </Shell>

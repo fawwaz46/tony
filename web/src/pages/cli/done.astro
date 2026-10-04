@@ -20,12 +20,12 @@ const login = Astro.url.searchParams.get("as") ?? "";
 const who = /^[A-Za-z0-9 ._-]{1,39}$/.test(login) ? login : "";
 ---
 
-<Shell title="You're signed in — tony" description="The tony CLI is signed in.">
+<Shell title="You're signed in · tony" description="The tony CLI is signed in.">
   <div class="auth done">
     <p class="cap">Signed in</p>
     <h1>{who ? `You're signed in as ${who}.` : "You're signed in."}</h1>
     <p class="sub">
-      Your terminal has what it needs. You can close this tab and go back to it.
+      You can close this tab and go back to your terminal.
     </p>
 
     <div class="next">
@@ -33,10 +33,7 @@ const who = /^[A-Za-z0-9 ._-]{1,39}$/.test(login) ? login : "";
       <div class="cmd">
         <code><span class="p">&gt;</span> review this branch with tony</code>
       </div>
-      <p class="fine">
-        The agent reads the diff, writes the review, and hands you back a link.
-        You do not need to run anything else.
-      </p>
+      <p class="fine">You get a link back. That's it.</p>
     </div>
 
     <div class="cta-row">

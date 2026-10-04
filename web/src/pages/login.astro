@@ -68,7 +68,7 @@ const here = new URL(
 ).toString();
 
 const errors: Record<string, string> = {
-  login: "That sign-in did not complete. Nothing was saved — try again.",
+  login: "That sign-in didn't finish. Try again.",
   unavailable: "That option is not available on this deployment.",
   unconfigured: "This deployment has no sign-in configured yet.",
 };
@@ -92,13 +92,13 @@ const marks: Record<string, string> = {
 };
 ---
 
-<Shell title="Sign in — tony" description="Sign in to tony.">
+<Shell title="Sign in · tony" description="Sign in to tony.">
   <div class="auth">
     <p class="cap">{forCli ? "Signing in the tony CLI" : "Sign in"}</p>
     <h1>{forCli ? "Finish setting up tony" : "Sign in to tony"}</h1>
     <p class="sub">
       {forCli
-        ? "Pick an account. When it is done, this page will tell you to go back to your terminal."
+        ? "Pick an account. This page tells you when to go back to your terminal."
         : "Reviews you publish are kept under this account."}
     </p>
 
@@ -116,9 +116,7 @@ const marks: Record<string, string> = {
             <button class="btn quiet" type="submit">Use a different account</button>
           </form>
           <p class="fine">
-            This only ends tony's session. If your provider signs you straight back in as
-            the same person, open this page in a private window — there is no account
-            cached there to reuse.
+            Signed straight back in as the same person? Open this page in a private window.
           </p>
           <p class="where"><code>{here}</code></p>
           {revokeUrl && (

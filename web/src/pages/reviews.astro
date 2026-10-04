@@ -40,7 +40,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_DAYS * DAY).toISOString());
 ---
 
-<Shell title="Reviews — tony">
+<Shell title="Reviews · tony">
   {
     rows.length === 0 ? (
       <section class="sec" style="border:0">
@@ -48,8 +48,7 @@ const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_D
         <h2 class="big">Nothing published yet.</h2>
         <div class="empty">
           <p>
-            Connect tony to your coding agent, then ask it for a review. Every one
-            you publish shows up here, and the link works for anyone signed in.
+            Connect tony, then ask your agent for a review. It shows up here.
           </p>
           <div class="cmd" style="margin-bottom:.75rem">
             <code><span class="p">$ </span>tony connect &amp;&amp; tony login</code>
@@ -63,7 +62,7 @@ const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_D
       <section class="sec" style="border:0">
         <p class="cap">[ reviews · {rows.length} ]</p>
         <h2 class="big">Everything you've published.</h2>
-        <p class="rnote">Each review is deleted {RETENTION_DAYS} days after it was published, and its link stops working.</p>
+        <p class="rnote">Reviews are deleted after {RETENTION_DAYS} days.</p>
         <div class="rlist">
           {rows.map((r: any, i: number) => (
             <div class="rrow" data-id={r.id}>
@@ -126,14 +125,13 @@ const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_D
   <section class="sec" style="border:0">
     <p class="cap">[ account ]</p>
     <p class="rnote">
-      Deleting your account removes every review you have published, your
-      sign-ins, and the CLI's login, straight away. It cannot be undone.
+      Deletes every review and signs out everywhere. Can't be undone.
     </p>
     <button type="button" class="ract danger" id="delete-account">Delete my account</button>
     <script>
       const b = document.getElementById("delete-account") as HTMLButtonElement;
       b.addEventListener("click", async () => {
-        if (!confirm("Delete your tony account and every review in it? Every link you have sent stops working. This cannot be undone.")) return;
+        if (!confirm("Delete your account and every review in it? This can't be undone.")) return;
         b.disabled = true;
         b.textContent = "Deleting…";
         const resp = await fetch("/api/account", { method: "DELETE" });
