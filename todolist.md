@@ -99,52 +99,38 @@ provenance data in §3 will say.
 - [ ] **Act on it**: warn on connect from a harness/model that scores badly,
       or refuse below a floor.
 
-## 4 — Hosted work (what blocks monetizing)
+## 4 — Hosted work
 
-- [ ] **Fix review authorization.** `web/src/pages/api/reviews/[id].ts:38` gates
-      reads on *any* logged-in account, then fetches by id with no ownership
-      check — any tony user with an id can read any review. DELETE is owner-only
-      (`:74`); reads aren't. This is a login wall, not access control, and it
-      fails the first security review a team with a private repo runs. Fix
-      before orgs land — it's a `WHERE user_id =` today and a migration later.
-- [ ] **Orgs and teams.** Org accounts, membership, invites, per-review
-      visibility (private / org / link). Repo-scoped permissions after that.
-- [ ] **Billing.** Stripe, plans, seats, upgrade at the point of wanting — the
-      moment someone has a review and nothing to send.
-- [ ] **Free/paid boundary.** There is no free tier right now — publishing needs
-      an account and there is nothing else to do. Either bring back a local
-      render inside `tony_publish`, or make free a metered number of hosted
-      reviews. Paid = persistence, teammates, history, access control.
-- [ ] **Per-plan rate limits.** The existing 60/hour is one global number.
-- [ ] **Retention and deletion.** Payloads contain source code. Delete-my-data,
-      retention window, and a privacy policy that says what's stored and who can
-      read it — including that the server can open reviews.
+- [x] **Review authorization** (2026-09-06, `7a51a1f`) — settled the other
+      way: the link is the capability. Any signed-in account with the id can
+      read, ids are ~79 bits, and reads are throttled at 240/account/hour so the
+      route is not an enumeration oracle. DELETE is owner-only. Per-review
+      visibility comes back only with orgs, which are parked.
+- [x] **Retention and deletion** (2026-10-04, `web/src/server/retention.ts`).
+      Reviews expire 30 days after publishing: refused at read past the
+      window, and swept (blob, then row) 25 at a time after each upload — no
+      cron. Self-serve account deletion on `/reviews` (`DELETE /api/account`,
+      browser session only) removes every blob and cascades the rest. `/privacy`
+      says both.
 - [ ] **A security page.** Teams with private repos will ask before they buy.
       Sealed-at-rest, TLS, access model, retention, subprocessors.
-- [ ] **Migration** for reviews published before ACLs exist.
-
-## 5 — Let readers mark annotations wrong
-
-- [ ] **Flag control on each annotation** in the review page → stored against the
-      review, the annotation, and the provenance row.
-- [ ] **Use it as the correctness signal.** Coverage measures completeness; only
-      this measures whether the content is *true*. It's the one failure
-      validation can't catch, and it's the metric that tells you whether
-      tabs 2 and 3 — the differentiated half — are trustworthy.
-- [ ] **Feed it back into §3** — flag rate per model is the number that decides
-      which harnesses you support.
 
 ## 6 — Carried over from nextSteps.md, re-scoped by the pivot
 
-- [ ] **Large-diff chunking is now a correctness requirement, not a cost one.**
-      The 40k-line extrapolation (~970K tokens, ~50 turns) used to be your bill;
-      under agent-native it's the user's context window, and it will compact or
-      fail mid-review. `splitDiffByFile` already gives the seam.
-- [ ] **Annotation density collapse on large diffs** is now load-bearing —
-      coverage validation will reject exactly those reviews. Fixing the
-      concision-vs-coverage fight in the instructions is a §2 dependency.
-- [ ] **Filter generated files in `getDiff`.** Lockfiles, `dist/`, minified
-      assets. Pure savings, no quality risk, now saves the user's context.
+- [x] **Large-diff chunking** (2026-10-04). Past `PART_CHARS` (150k chars of
+      agent diff, ~40k tokens) `tony_start` splits by file and returns a
+      dispatch message instead of the diff; one fresh subagent per part calls
+      `tony_start`/`tony_publish` with `sessionId` + `part`, each part is
+      validated and coverage-gated on its own files, and a final
+      `tony_publish` with only `intent` merges and publishes one page. Assumes
+      subagents share the parent's `tony mcp` process. Not yet run against a
+      real large diff in a real harness.
+- [x] **Annotation density on large diffs.** The instructions now say coverage
+      beats concision outright, the gate enforces it, and chunking keeps each
+      reviewer's slice small enough that the two stop fighting.
+- [x] **Filter generated files** (`2d615ac`). `withoutGeneratedBodies` strips
+      lockfiles, build dirs and minified assets from what the agent reads;
+      the page still lists them with real line counts.
 - [ ] **Renderer work is unchanged** — pagination, role-based file grouping,
       mirror ordering. Still yours, still client-side, unaffected by the pivot.
 
@@ -154,11 +140,32 @@ provenance data in §3 will say.
       (2026-09-05), and the homepage flow is the agent-native one: install,
       `tony connect && tony login`, then "review this branch with tony" typed
       at the agent. Nothing on the site still describes a CLI that reviews.
-- [ ] **Pricing page.** $100/seat is at the high end for dev tooling — the
-      pitch has to be depth (blast radius, runtime walkthroughs, full coverage)
-      against a free bundled PR summary, not "we also explain the diff".
 - [ ] **Find the gate.** The structural weakness: tony is optional reading, so
       nothing breaks when someone cancels. Candidates — required review artifact
       on PRs touching flagged paths, an acknowledgement trail of who read a
       change, assigned onboarding reviews. This is the retention problem and
       it's worth more than any feature on this list.
+
+---
+
+## Parked — pricing, orgs, reader flags (scrapped for the MVP, 2026-10-04)
+
+Not being worked on. Kept so the thinking isn't re-derived if it comes back.
+
+- **Billing.** Stripe, plans, seats, upgrade at the point of wanting — the
+  moment someone has a review and nothing to send.
+- **Free/paid boundary.** There is no free tier right now — publishing needs
+  an account and there is nothing else to do. Either bring back a local
+  render inside `tony_publish`, or make free a metered number of hosted
+  reviews. Paid = persistence, teammates, history, access control.
+- **Per-plan rate limits.** The existing 60/hour is one global number.
+- **Pricing page.** $100/seat is at the high end for dev tooling — the
+  pitch has to be depth (blast radius, runtime walkthroughs, full coverage)
+  against a free bundled PR summary, not "we also explain the diff".
+- **Orgs and teams.** Org accounts, membership, invites, per-review
+  visibility (private / org / link). Repo-scoped permissions after that.
+- **Migration** for reviews published before ACLs exist — only needed once orgs do.
+- **Let readers mark annotations wrong.** A flag on each annotation, stored
+  against the review and its provenance row — the only signal for whether an
+  annotation is *true* rather than merely present. Flag rate per model would
+  decide which harnesses to support.

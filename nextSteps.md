@@ -72,11 +72,6 @@ large from turn two.
 
 ## Ops
 
-- **Run the `tokens.expires_at` migration against a real database once.** Added 2026-08-22,
-  never executed — there is no local Postgres. It runs inside `withDatabase`, so a failure
-  surfaces as a 503 that reads like an outage.
-- **Blob retention.** Nothing expires. Rows and blobs live until someone runs
-  `tony unpublish`, and nobody will. Storage is the only cost that grows with use.
 - **Rate limit on review reads.** Any signed-in account can fetch any review by id — stated
   design, the id is the capability — but that route has no throttle, so it is a free
   enumeration oracle.
