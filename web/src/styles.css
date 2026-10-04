@@ -122,10 +122,6 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .ann.skip{background:var(--s1);border-color:var(--rule-2)}
 .ann.skip .t{color:var(--ink-4)}
 .ann.skip .n{color:var(--ink-3)}
-/* Marks a walkthrough of a flow the diff did not touch. Informational, so it
-   takes the info colour rather than the accent, which belongs to changed code. */
-.rch{margin-left:.75rem;color:var(--info);border:1px solid var(--info-line);
-  background:var(--info-bg);padding:.2em .55em;font-size:.58rem;letter-spacing:.08em}
 .ann .ln{font-size:.62rem;letter-spacing:.06em;color:var(--ink-4);text-transform:none}
 .ann .k{font-size:.58rem;letter-spacing:.1em;color:var(--ink-4)}
 .ann .n{margin:0;font-size:.85rem;line-height:1.55;color:var(--ink-2);max-width:64ch}
@@ -172,43 +168,159 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .stepper button:hover{border-color:var(--rule-3);color:var(--ink)}
 .stepper .sh{color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* ---- walkthroughs ---- */
-.wintro{border-left:1px solid var(--rule-2);padding:.1rem 0 .1rem 1.25rem;margin-bottom:1.25rem;
-  max-width:64ch}
-.wintro p{margin:0 0 .6rem;font-size:.875rem;color:var(--ink-3)}
-.wintro p:last-child{margin:0}
-.wintro b{color:var(--ink-2);font-weight:500}
+/* ---- flows ----
+   Swiss: a strict grid, heavy rules where a section starts, numerals at
+   display size, everything flush left. Colour stays information — green for
+   a step the change added, the accent for one it altered, red dashed for one
+   it removed — the same three things the diff itself is coloured by. */
 .tl{font-family:var(--mono);font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;
   color:var(--ink-4);margin-right:.6rem}
-.wt{border-top:1px solid var(--rule);padding:1.25rem 0 2.5rem}
-.wth{margin-bottom:1.5rem}
 .cap{font:500 .62rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
   color:var(--ink-4);margin:0 0 .8rem}
-.wth h3{margin:0 0 .5rem;font-size:1.35rem;font-weight:700;letter-spacing:-.038em;
-  color:var(--ink)}
-.trig{margin:0;color:var(--ink-3);font-size:.9rem}
-.wchg{margin:.5rem 0 0;font-size:.9rem;color:var(--ink-2)}
-.covers{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
-.chip{font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;color:var(--ink-4);
-  border:1px solid var(--rule);padding:.2em .5em}
-.chip.hot{color:var(--accent);border-color:var(--accent-line)}
-.dots{display:flex;gap:.4rem;margin-bottom:1.25rem;flex-wrap:wrap}
-.dot{font:400 .62rem/1 var(--mono);letter-spacing:.06em;min-width:2.1rem;height:1.9rem;
-  border:1px solid var(--rule);background:none;color:var(--ink-4);cursor:pointer;padding:0 .35em}
-.dot:hover{border-color:var(--rule-3);color:var(--ink-3)}
-.dot.new,.dot.changed{border-color:var(--accent-line);color:var(--accent)}
-.dot.removed{border-style:dashed;text-decoration:line-through}
-.dot[aria-current]{background:var(--ink);border-color:var(--ink);color:var(--ground)}
-.dot:focus-visible{outline:1px solid var(--rule-3);outline-offset:2px}
+.fr{font:500 .58rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4)}
+.fr.new{color:var(--pos)} .fr.changed{color:var(--accent)}
+.fr.removed{color:var(--neg)} .fr.downstream{color:var(--info)}
+
+.flows-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:2rem;
+  align-items:baseline;margin-bottom:.4rem}
+.fhint{margin:0 0 .8rem;font-size:.85rem;color:var(--ink-3);max-width:60ch}
+.findex{border-top:2px solid var(--ink);margin-bottom:3.5rem}
+.fi{display:grid;grid-template-columns:3.5rem minmax(0,1fr) 10rem 9rem 4.5rem;gap:1rem;
+  align-items:center;width:100%;background:none;border:0;border-bottom:1px solid var(--rule);
+  padding:.9rem 0;color:var(--ink-3);text-align:left;cursor:pointer;font:inherit}
+.fi:hover{background:var(--s1);color:var(--ink-2)}
+.fi[aria-current]{color:var(--ink);box-shadow:inset 2px 0 0 var(--ink)}
+.fi:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
+.fi .ix{font:400 .7rem/1 var(--mono);color:var(--ink-4);padding-left:.9rem}
+.fi .ft{font-size:1.05rem;font-weight:500;letter-spacing:-.015em;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.fi .fn{font:400 .65rem/1 var(--mono);color:var(--ink-4);text-align:right}
+.strip{display:flex;gap:2px}
+.strip i{width:.5rem;height:.5rem;background:var(--rule-3)}
+.strip i.new{background:var(--pos)} .strip i.changed{background:var(--accent)}
+.strip i.removed{background:none;box-shadow:inset 0 0 0 1px var(--neg)}
+@media (max-width:52rem){
+  .flows-head{grid-template-columns:1fr;gap:0}
+  .fi{grid-template-columns:2.75rem minmax(0,1fr) auto}
+  .fi .strip,.fi .fn{display:none}
+}
+
+.wt{border-top:2px solid var(--ink);padding:1.5rem 0 3rem}
+.wt[hidden]{display:none}
+.wth{display:grid;grid-template-columns:minmax(0,11rem) minmax(0,1fr);gap:2rem;margin-bottom:2.25rem}
+.wth .big{font-size:clamp(4rem,9vw,7.5rem);font-weight:700;letter-spacing:-.07em;
+  line-height:.78;color:var(--ink)}
+.wth .cap .fr{margin-left:1rem}
+.wth h3{margin:0 0 1.25rem;font-size:clamp(1.6rem,3.2vw,2.4rem);font-weight:700;
+  letter-spacing:-.045em;line-height:1.02;color:var(--ink);max-width:22ch;text-wrap:balance}
+.wmeta{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;border-top:1px solid var(--rule);
+  padding-top:.9rem}
+.wmeta p{margin:0;font-size:.9rem;color:var(--ink-2);line-height:1.5;max-width:52ch}
+.wmeta .tl{display:block;margin-bottom:.45rem}
+@media (max-width:52rem){
+  .wth{grid-template-columns:1fr;gap:.75rem}
+  .wth .big{font-size:3.75rem}
+  .wmeta{grid-template-columns:1fr;gap:1rem}
+}
+
+.wtbar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.9rem;
+  font:400 .7rem/1 var(--mono);color:var(--ink-4)}
+.wtbar button{font:500 .6rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  background:none;color:var(--ink-3);border:1px solid var(--rule-2);padding:.6rem .85rem;
+  cursor:pointer}
+.wtbar button:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
+.wtbar button:disabled{color:var(--rule-3);border-color:var(--rule);cursor:default}
+.wtbar button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--ground)}
+.wtbar button:focus-visible{outline:1px solid var(--rule-3);outline-offset:2px}
+.seg{display:flex;margin-right:.75rem}
+.seg button+button{border-left:0}
+.wpos{margin-left:auto;margin-right:.5rem}
+
+/* The sequence. Lanes are equal columns; each lane draws its lifeline down
+   the whole height as a background, so a lane with no step in a row is still
+   visibly there. Node and arrow are placed from --a, --from and --span. */
+.seq{overflow-x:auto;border:1px solid var(--rule);background:var(--s1);margin-bottom:2rem}
+.seqin{min-width:calc(3rem + var(--lanes) * 8.5rem)}
+.lanes{display:grid;grid-template-columns:3rem repeat(var(--lanes),minmax(0,1fr));
+  border-bottom:1px solid var(--rule);background:var(--s2)}
+.lane{padding:.75rem .5rem;text-align:center;font:500 .6rem/1.2 var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rows{padding:.5rem 0 .75rem}
+/* A phone fits three lanes without scrolling; more than that scroll inside
+   the diagram's own box, never the page. */
+@media (max-width:52rem){
+  .seqin{min-width:calc(2.25rem + var(--lanes) * 6rem)}
+  .lanes,.srow{grid-template-columns:2.25rem repeat(var(--lanes),minmax(0,1fr))}
+  .srow{grid-template-columns:2.25rem minmax(0,1fr)}
+  .srow .sn{padding-right:.5rem}
+  .lane{letter-spacing:.08em}
+}
+.srow{display:grid;grid-template-columns:3rem minmax(0,1fr);width:100%;min-height:3.4rem;
+  background:none;border:0;padding:0;cursor:pointer;text-align:left;font:inherit;
+  color:var(--ink-3);--ph:var(--ink);--row-bg:var(--s1)}
+.srow[hidden]{display:none}
+.srow.new{--ph:var(--pos)} .srow.changed{--ph:var(--accent)} .srow.removed{--ph:var(--neg)}
+.srow.new,.srow.changed,.srow.removed{color:var(--ph)}
+.srow.future{color:var(--rule-3)}
+.srow:hover:not([aria-current]){background:var(--s2);--row-bg:var(--s2)}
+.srow[aria-current]{background:var(--s3);--row-bg:var(--s3)}
+.srow[aria-current].same{color:var(--ink)}
+.srow:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
+.srow .sn{font:400 .62rem/1 var(--mono);color:var(--ink-4);align-self:center;text-align:right;
+  padding-right:.9rem}
+.srow[aria-current] .sn{color:var(--ink)}
+.track{position:relative;display:block;overflow:hidden;
+  background-image:linear-gradient(to right,transparent calc(50% - .5px),var(--rule-2) calc(50% - .5px),
+    var(--rule-2) calc(50% + .5px),transparent calc(50% + .5px));
+  background-size:calc(100% / var(--lanes)) 100%;background-repeat:repeat-x}
+.node{position:absolute;top:1.15rem;left:calc((var(--a) + .5) * 100% / var(--lanes));
+  width:.75rem;height:.75rem;transform:translate(-50%,-50%);background:var(--s1);
+  border:1px solid currentColor;z-index:1}
+.srow:hover .node{background:var(--s2)}
+.srow[aria-current] .node{background:currentColor;width:.95rem;height:.95rem}
+.srow.removed .node{border-style:dashed}
+.arrow{position:absolute;top:1.15rem;height:1px;background:currentColor;transform-origin:left center;
+  left:calc((var(--from) + .5) * 100% / var(--lanes));
+  width:calc(var(--span) * 100% / var(--lanes) - .6rem)}
+.arrow::after{content:"";position:absolute;right:-1px;top:-3px;border:3.5px solid transparent;
+  border-left:6px solid currentColor;border-right:0}
+.srow.left .arrow{transform-origin:right center;left:calc((var(--from) + .5) * 100% / var(--lanes) + .6rem)}
+.srow.left .arrow::after{right:auto;left:-1px;border-left:0;border-right:6px solid currentColor}
+.srow.self .arrow{display:none}
+.srow.removed .arrow{background:none;border-top:1px dashed currentColor;height:0}
+.srow.removed .arrow::after{top:-4px}
+.srow[aria-current] .arrow{height:2px;top:calc(1.15rem - .5px)}
+/* A step's label hangs under its arrow, on the row's own surface so the
+   lifelines it crosses stop at the text rather than running through it, and
+   it ends at the diagram's edge in an ellipsis. A step that stays in a lane
+   right of centre hangs its label leftward instead, or it would get half a
+   lane to say anything in. */
+.slab{position:absolute;top:1.85rem;left:calc((var(--from) + .5) * 100% / var(--lanes) - .35rem);
+  width:max-content;max-width:calc((var(--lanes) - var(--from) - .5) * 100% / var(--lanes) - .25rem);
+  font-size:.72rem;line-height:1.3;color:var(--ink-4);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;padding:0 .35rem;background:var(--row-bg)}
+.srow.rt .slab{left:auto;right:calc((var(--lanes) - var(--a) - .5) * 100% / var(--lanes) - .35rem);
+  max-width:calc((var(--a) + .5) * 100% / var(--lanes))}
+.srow[aria-current] .slab{color:var(--ink-2)}
+.srow.future .slab{color:var(--rule-3)}
+.srow.draw .arrow{animation:flow-draw .55s cubic-bezier(.2,.7,.2,1)}
+.srow.draw .node{animation:flow-pop .3s .4s backwards}
+@keyframes flow-draw{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes flow-pop{from{transform:translate(-50%,-50%) scale(0)}}
+::view-transition-group(*){animation-duration:.4s;animation-timing-function:cubic-bezier(.2,.7,.2,1)}
+
+/* The current step, under the diagram. */
 .panels{display:grid;margin-bottom:1.25rem}
-.stepPanel{grid-area:1 / 1;visibility:hidden}
-.stepPanel.on{visibility:visible}
-.say{margin:0 0 1rem;font-size:1.05rem;line-height:1.5;max-width:60ch;color:var(--ink);
-  letter-spacing:-.008em}
+.stepPanel{grid-area:1 / 1;visibility:hidden;opacity:0;transition:opacity .25s,visibility .25s}
+.stepPanel.on{visibility:visible;opacity:1}
+.where{display:flex;align-items:baseline;gap:.9rem;margin:0 0 .7rem;font:500 .6rem/1 var(--mono);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.where .sn{color:var(--ink)}
+.say{margin:0 0 1.25rem;font-size:clamp(1.15rem,2vw,1.45rem);line-height:1.35;max-width:46ch;
+  color:var(--ink);letter-spacing:-.022em;font-weight:500;text-wrap:pretty}
 .ph{font-family:var(--mono);font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;
-  margin-left:.7rem;color:var(--accent);white-space:nowrap;font-weight:500}
-.ph.removed{color:var(--neg)}
-.ph.same{display:none}
+  color:var(--accent);white-space:nowrap;font-weight:500}
+.ph.new{color:var(--pos)} .ph.removed{color:var(--neg)} .ph.same{display:none}
 .split{display:grid;grid-template-columns:1fr 15rem;gap:1.25rem;align-items:start}
 @media (max-width:52rem){.split{grid-template-columns:1fr}}
 .cw{border:1px solid var(--rule);min-width:0;background:var(--s1)}
@@ -224,14 +336,15 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .sk{color:var(--ink-4);display:block;margin-bottom:.15rem}
 .sv .was{color:var(--ink-4);text-decoration:line-through}
 .sv .to{color:var(--ink-4);margin:0 .35em}
-.sv .now{color:var(--accent)}
-.wtnav{display:flex;align-items:center;gap:1rem;font-family:var(--mono);font-size:.7rem;
-  color:var(--ink-4)}
-.wtnav button{font:500 .65rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;
-  background:none;color:var(--ink-3);border:1px solid var(--rule-2);padding:.5rem .9rem;
-  cursor:pointer}
-.wtnav button:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
-.wtnav button:disabled{color:var(--rule-3);border-color:var(--rule);cursor:default}
+.sv .now{color:var(--accent);display:inline-block}
+.stepPanel.on .sv .now{animation:flow-rise .4s .2s backwards}
+@keyframes flow-rise{from{transform:translateY(.45em);opacity:0}}
+
+@media (prefers-reduced-motion:reduce){
+  .srow.draw .arrow,.srow.draw .node,.stepPanel.on .sv .now{animation:none}
+  .stepPanel{transition:none}
+  ::view-transition-group(*){animation:none}
+}
 
 /* Elided regions of a windowed file: the cut is announced, never silent. */
 .l.elide{color:var(--ink-4);font-style:normal;background:var(--s2)}

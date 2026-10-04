@@ -182,6 +182,21 @@ mono eyebrow in accent; the kind tag and line range follow in `--ink-4`. Multi-p
 (Prev / New / Changes) only when the model supplied more than one pane; a plain insertion gets
 flat prose and no tabs.
 
+**Flow** (the How it works tab) — Swiss, more than anywhere else on the page: a 2px `--ink`
+rule where each flow starts, its number at display size (`7.5rem`, 700, `-.07em`), the title
+beside it, and *Starts when* / *What changed* as two flush-left columns under a hairline. With
+more than one flow, an index table sits above: `[01]` · title · reach · a strip of one square
+per step coloured by phase · step count.
+
+The diagram is a sequence: one equal-width lane per `actor` (first appearance order), a 1px
+lifeline down each, and one row per step with a node on its lane and an arrow from the previous
+*visible* step's lane. The model names actors; arrows are derived from step order and never
+supplied. Phase colours are the diff's: `new` → `--pos`, `changed` → `--accent`, `removed` →
+`--neg` with dashed arrow and node. Rows after the current one drop to `--rule-3`; the current
+row lifts to `--s3`, its node fills, its arrow thickens to 2px and draws in. *Before / Both /
+After* hides `new` or `removed` steps and re-lays out through a view transition. Reduced motion
+gets every state and no animation.
+
 **Code window** (walkthroughs) — header naming the file on `--s2`, body on `--s1`, requested
 lines highlighted, two lines of padding either side, read from disk.
 

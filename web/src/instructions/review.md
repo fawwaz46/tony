@@ -130,22 +130,24 @@ RISKS — genuine ones only, and only where you can name the failing path. These
 - Anchor to `path` and `line` when the risk lives in the diff. Omit both when it does not.
 - An empty list is a valid answer. Never manufacture risks, and never restate an annotation as a risk.
 
-WALKTHROUGHS — a steppable trace of what the code DOES at runtime.
+WALKTHROUGHS — the flows this change touches, each one traced step by step.
 
-The reader has no working model of how this program executes. They cannot get one from reading the code, and a static picture of boxes and arrows will not give them one either. What builds it is following a single concrete scenario, one step at a time, watching state change.
+The reader has no working model of how this program executes. They cannot get one from reading the code, and a static picture of boxes and arrows will not give them one either. What builds it is following a single concrete scenario, one step at a time, watching state change and watching it move between the parts of the system.
 
-Write at most three, and never more than one of each kind below. Zero is correct when the change has no runtime behaviour — a copy edit, a rename, a config bump. Never write one that merely restates the annotations.
+The page draws each walkthrough as a sequence: one lane per `actor`, an arrow from each step to the next, the code for the current step beside it, and a switch between the flow as it was and the flow as it is. So write the steps as something that moves — from the browser to a route to the database and back — and name where each one happens.
 
-There are two kinds, and `reach` says which:
+START BY LISTING THE FLOWS. Before writing any walkthrough, walk the annotations and ask, for each runtime behaviour the diff touches: which scenario would a person recognise this in? A checkout, a login, a nightly job, a page load, a CLI command. Group the changes by scenario. Each distinct scenario is a candidate:
 
-- `"reach": "changed"` — a flow the diff altered directly. Trace the scenario the change most affects. This is the one to write first, and usually the only one.
-- `"reach": "downstream"` — a flow the diff did NOT touch, which now behaves differently because it runs through something you listed in `impacts`. Nothing else in the review can say this. The annotations explain what changed; the impacts name the call sites it reaches; only this shows the reader a scenario somewhere else in the product that now goes differently, and where it diverges.
+- `"reach": "new"` — a flow that did not exist before this diff. A new endpoint, a new command, a new background job. Every step is "new" except the existing code it calls into.
+- `"reach": "changed"` — a flow that existed and now runs differently. Show the old steps as "removed" and the new ones as "new", in execution order, so the reader can see the path change.
+- `"reach": "removed"` — a flow the diff deleted outright. Trace it as it used to run, with the steps that no longer happen marked "removed", so the reader knows what is gone.
+- `"reach": "downstream"` — a flow the diff did NOT touch, which now behaves differently because it runs through something you listed in `impacts`. Nothing else in the review can say this. Write one when you have an impact of kind "breaks" or "behavior-change" that sits inside a flow a person would recognise. Trace it from its own trigger, through the impact site, to the place the outcome differs.
 
-Write a downstream walkthrough when you have an impact of kind "breaks" or "behavior-change" that sits inside a flow a person would recognise — a checkout, a nightly job, a login, an export. Trace that flow from its own trigger, through the impact site, to the place the outcome differs. Its `whatChanged` names the consequence for THAT flow, not for the diff.
+Write one walkthrough per distinct flow. There is no fixed number: a one-line fix may have one or none, a feature branch may have five. What there must not be is two walkthroughs tracing the same path, or one that merely restates the annotations. Zero is correct when the change has no runtime behaviour — a copy edit, a rename, a config bump. Do not write one for a "compatible" impact, and do not invent a flow to have one.
 
-Do not write one for a "compatible" impact — there is nothing to show. Do not invent a flow to have one; if every impact is a lone utility call with no scenario around it, one walkthrough is the right answer.
+Order them by how much the reader needs them: the flow the change most affects first.
 
-Both kinds cost the same to read and are traced the same way: follow the calls with your own tools, read every file you step through, and never guess a line range.
+All kinds are traced the same way: follow the calls with your own tools, read every file you step through, and never guess a line range.
 
 Put them in the `walkthroughs` array:
 
@@ -157,12 +159,20 @@ Put them in the `walkthroughs` array:
     "whatChanged": "Before this diff a resumed export started over from the first record instead of picking up where it stopped.",
     "steps": [
       {"say": "The CLI reads the checkpoint file the previous run left behind, which records the last record it managed to write.",
-       "path": "exporter/checkpoint.py", "lines": [22, 30],
-       "state": {"lastWritten": "4180", "cursor": "0"},
+       "actor": "CLI", "path": "exporter/checkpoint.py", "lines": [22, 30],
+       "state": {"lastWritten": "4180"},
        "phase": "new"},
-      {"say": "The database cursor opens at that position instead of at zero, so nothing already exported is fetched a second time.",
-       "path": "exporter/run.py", "lines": [57, 61],
+      {"say": "It used to open the database cursor at the very first record, whatever had already been written.",
+       "actor": "export runner", "path": "exporter/run.py", "lines": [55, 56],
+       "state": {"cursor": "0"},
+       "phase": "removed"},
+      {"say": "The cursor now opens at the checkpoint instead, so nothing already exported is fetched a second time.",
+       "actor": "export runner", "path": "exporter/run.py", "lines": [57, 61],
        "state": {"cursor": "0 -> 4180"},
+       "phase": "new"},
+      {"say": "Postgres streams the remaining rows from that position onward.",
+       "actor": "Postgres",
+       "state": {"rows fetched": "12,000 -> 7,820"},
        "phase": "changed"}
     ]
   }
@@ -178,14 +188,15 @@ A downstream one, traced outward from an impact rather than from a hunk:
     "whatChanged": "Nothing in this job changed, but it counts charge rows — and retried payments no longer create a second row, so its totals drop against previous nights for the same real revenue.",
     "steps": [
       {"say": "The job selects every charge captured yesterday and counts the rows it gets back.",
-       "path": "jobs/revenue.py", "lines": [5, 11],
+       "actor": "revenue job", "path": "jobs/revenue.py", "lines": [5, 11],
        "state": {"rows": "1,204 -> 1,187"},
        "phase": "same"},
       {"say": "Those seventeen missing rows are the duplicate charges retries used to create, which the new idempotency key now prevents.",
-       "path": "billing/invoices.py", "lines": [84, 96],
+       "actor": "charges route", "path": "billing/invoices.py", "lines": [84, 96],
        "state": {"duplicates": "17 -> 0"},
        "phase": "changed"},
       {"say": "The dashboard shows the day as down on the previous one, though the same money was taken.",
+       "actor": "dashboard",
        "state": {"reported gross": "lower", "actual revenue": "unchanged"},
        "phase": "same"}
     ]
@@ -193,20 +204,20 @@ A downstream one, traced outward from an impact rather than from a hunk:
 ]}
 
 FIELDS
-- `reach`: "changed" or "downstream", as above. Required.
+- `reach`: "new", "changed", "removed" or "downstream", as above. Required.
 - `title`: at most six words, naming the scenario.
 - `trigger`: one sentence describing what the user or system does to start it. Concrete and physical — "you click X", "a link is pasted into Slack", "the page finishes loading" — never "the function is invoked".
 - `whatChanged`: ONE sentence naming what this diff altered about THIS flow specifically, written so it makes sense before the reader has stepped through anything. This is the reason the walkthrough exists — if you cannot write it, the walkthrough does not belong.
-- `steps`: in execution order. Between three and seven. Fewer than three is not a trace; more than seven is a lecture.
+- `steps`: in execution order. Between three and ten. Fewer than three is not a trace; more than ten is a lecture.
 - `say`: ONE sentence, plain language, about what happens at this step and why. No jargon unless you define it in the same clause. Do not narrate the syntax — explain the effect.
-- `path` and `lines`: `[start, end]` in the CURRENT file, the code responsible for this step. The reader is shown these exact lines, read from disk, so verify them. `lines` may be omitted for a step that happens outside the codebase (a browser behaviour, a third-party fetch), in which case omit `path` too.
+- `actor`: the part of the system this step happens in, in one to three words — "Browser", "charges route", "Postgres", "Stripe", "CLI". It becomes a lane on the diagram, and a step's arrow runs from the previous step's actor to this one. Spell an actor exactly the same way every time it appears, or it becomes two lanes. Name parts of the system, not functions: a lane per function makes a diagram as wide as the call stack. Three to five actors is the readable range for one flow.
+- `path` and `lines`: `[start, end]` in the CURRENT file, the code responsible for this step. The reader is shown these exact lines, read from disk, so verify them. `lines` may be omitted for a step that happens outside the codebase (a browser behaviour, a third-party fetch), in which case omit `path` too — but still give the `actor`. For a "removed" step the code is gone from the current file: give the lines where it used to be only if they still hold the code around it, otherwise omit both.
 - `state`: a small map of what is true at this step. Use `"before -> after"` when the step changes something. Keep to three entries or fewer, and name things as the code names them so the reader can connect the two. Omit when nothing observable changes.
-- `phase`: "same" if this step happened before this diff too, "new" if the change introduced it, "changed" if the step existed but now behaves differently, "removed" if the change deleted it. Include "removed" steps in execution order where they used to run — seeing what no longer happens is how the reader understands the change.
+- `phase`: "same" if this step happened before this diff too, "new" if the change introduced it, "changed" if the step existed but now behaves differently, "removed" if the change deleted it. Include "removed" steps in execution order where they used to run — the page can show the flow as it was by hiding the new steps, and as it is by hiding the removed ones, so both versions have to read as a complete sequence on their own.
 
 RULES
 - One scenario per walkthrough. Do not merge two unrelated flows.
 - Trace what the code actually does. Read the files. Never guess at a line range or invent a step.
-- Prefer the scenario the change most affects. If the diff alters what happens when a link is shared, trace a link being shared.
 - Plain language throughout. The reader does not know what a hook, a ref, a prop, or a build step is unless you tell them in passing.
 
 RULES

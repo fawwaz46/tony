@@ -454,78 +454,282 @@ function renderState(state: Record<string, unknown> | undefined): string {
   return `<div class="state"><p class="cap">[ state ]</p>${rows}</div>`;
 }
 
-function renderWalkthroughs(walkthroughs: any[]): string {
-  if (walkthroughs.length === 0) return "";
-  const intro =
-    '<div class="wintro"><p><b>These are traces, not diagrams.</b> Each one follows a single real ' +
-    "scenario from the moment it starts, one step at a time. The code shown is read straight from " +
-    "your files.</p><p>Use <b>next</b> to advance. Before you press it, say what you think happens " +
-    "next — that guess is what makes the step stick.</p></div>";
+// A flow is drawn as a sequence: one lane per actor, an arrow from each step
+// to the next. The model names the actor; the arrows are not the model's to
+// draw — they follow from the order of the steps, so a diagram can never show
+// a hop the trace does not take.
 
+const REACH_LABEL: Record<string, string> = {
+  new: "new flow",
+  changed: "changed",
+  removed: "removed flow",
+  downstream: "reached, not changed",
+};
+
+/** The lane a step runs in: its actor, else its file, else outside the code. */
+function actorOf(st: any): string {
+  const named = typeof st.actor === "string" ? st.actor.trim() : "";
+  if (named) return named;
+  if (st.path) return String(st.path).split("/").pop() || String(st.path);
+  return "outside";
+}
+
+/** Whether before/after are two different, complete sequences worth switching between. */
+function hasTwoVersions(steps: any[]): boolean {
+  const before = steps.filter((st) => (st.phase || "same") !== "new").length;
+  const after = steps.filter((st) => (st.phase || "same") !== "removed").length;
+  return before > 0 && after > 0 && (before !== steps.length || after !== steps.length);
+}
+
+function renderFlowIndex(walkthroughs: any[]): string {
+  const rows = walkthroughs
+    .map((w, idx) => {
+      const steps: any[] = w.steps ?? [];
+      const strip = steps
+        .map((st) => `<i class="${cls(st.phase || "same")}"></i>`)
+        .join("");
+      const reach = REACH_LABEL[w.reach] ?? "";
+      return (
+        `<button class="fi" data-w="${idx}"${idx === 0 ? ' aria-current="true"' : ""}>` +
+        `<span class="ix">${pad2(idx + 1)}</span>` +
+        `<span class="ft">${esc(w.title || "Walkthrough")}</span>` +
+        `<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span>` +
+        `<span class="strip" aria-hidden="true">${strip}</span>` +
+        `<span class="fn">${steps.length} steps</span></button>`
+      );
+    })
+    .join("");
   return (
-    intro +
-    walkthroughs
-      .map((w, idx) => {
-        const steps: any[] = w.steps ?? [];
-        if (steps.length === 0) return "";
-        const seen: string[] = [];
-        for (const st of steps) if (st.path && !seen.includes(st.path)) seen.push(st.path);
-        const nNew = steps.filter((st) => (st.phase || "same") !== "same").length;
-        const ofN = walkthroughs.length > 1 ? ` / ${pad2(walkthroughs.length)}` : "";
-        const chips =
-          seen.map((p) => `<span class="chip">${esc(p.split("/").pop())}</span>`).join("") +
-          (nNew > 0 ? `<span class="chip hot">${nNew} of ${steps.length} steps are new</span>` : "");
-        const changed = w.whatChanged
-          ? `<p class="wchg"><span class="tl">What changed</span> ${esc(w.whatChanged)}</p>`
-          : "";
-        // A downstream trace is a flow this diff never touched, which now runs
-        // differently because it passes through something the diff reached.
-        // The reader has to be told that up front — otherwise they hunt the
-        // steps for an edit that is not in any of them.
-        const reach =
-          w.reach === "downstream"
-            ? `<span class="rch">not changed by this diff — reached by it</span>`
-            : "";
-
-        const dots = steps
-          .map((st, i) => {
-            const phase = st.phase || "same";
-            return `<button class="dot ${cls(phase)}" data-w="${idx}" data-s="${i}" aria-label="Step ${i + 1}"${i === 0 ? ' aria-current="true"' : ""}>${pad2(i + 1)}</button>`;
-          })
-          .join("");
-
-        const panels = steps
-          .map((st, i) => {
-            const phase = st.phase || "same";
-            const tag = PHASE_LABEL[phase] ? `<span class="ph ${cls(phase)}">${PHASE_LABEL[phase]}</span>` : "";
-            return (
-              `<div class="stepPanel${i === 0 ? " on" : ""}" data-w="${idx}" data-s="${i}">` +
-              `<p class="say">${esc(st.say)}${tag}</p>` +
-              `<div class="split">${renderCodeWindow(st)}${renderState(st.state)}</div></div>`
-            );
-          })
-          .join("");
-
-        return `
-<section class="wt" data-w="${idx}" data-n="${steps.length}">
-  <header class="wth">
-    <p class="cap">[ walkthrough ${pad2(idx + 1)}${ofN} ]${reach}</p>
-    <h3>${esc(w.title || "Walkthrough")}</h3>
-    <p class="trig"><span class="tl">Starts when</span> ${esc(w.trigger)}</p>
-    ${changed}
-    <div class="covers">${chips}</div>
-  </header>
-  <div class="dots">${dots}</div>
-  <div class="panels">${panels}</div>
-  <div class="wtnav">
-    <button class="wprev" data-w="${idx}" disabled>&#8249; back</button>
-    <span class="wpos" data-w="${idx}">step 1 of ${steps.length}</span>
-    <button class="wnext" data-w="${idx}">next &#8250;</button>
-  </div>
-</section>`;
-      })
-      .join("")
+    `<div class="flows-head"><p class="cap">[ flows · ${walkthroughs.length} ]</p>` +
+    `<p class="fhint">Each flow follows one real scenario through the system, one step at a time. ` +
+    `Before you press next, guess what happens — that guess is what makes it stick.</p></div>` +
+    `<div class="findex">${rows}</div>`
   );
+}
+
+function renderFlow(w: any, idx: number, total: number): string {
+  const steps: any[] = w.steps ?? [];
+  if (steps.length === 0) return "";
+
+  const actors: string[] = [];
+  for (const st of steps) {
+    const a = actorOf(st);
+    if (!actors.includes(a)) actors.push(a);
+  }
+
+  const lanes = actors
+    .map((a, i) => `<div class="lane" style="grid-column:${i + 2}" title="${esc(a)}">${esc(a)}</div>`)
+    .join("");
+
+  // Arrows are positioned by script, because which step precedes which
+  // depends on whether the reader is looking at the flow before or after.
+  const rows = steps
+    .map((st, i) => {
+      const phase = st.phase || "same";
+      return (
+        `<button class="srow ${cls(phase)}" data-s="${i}" data-a="${actors.indexOf(actorOf(st))}" ` +
+        `style="--a:${actors.indexOf(actorOf(st))};view-transition-name:f${idx}s${i}" ` +
+        `aria-label="Step ${i + 1}: ${esc(st.say)}">` +
+        `<span class="sn">${pad2(i + 1)}</span>` +
+        `<span class="track"><span class="arrow"></span><span class="node"></span>` +
+        `<span class="slab">${esc(st.say)}</span></span></button>`
+      );
+    })
+    .join("");
+
+  const panels = steps
+    .map((st, i) => {
+      const phase = st.phase || "same";
+      const tag = PHASE_LABEL[phase] ? `<span class="ph ${cls(phase)}">${PHASE_LABEL[phase]}</span>` : "";
+      return (
+        `<div class="stepPanel" data-s="${i}">` +
+        `<p class="where"><span class="sn">${pad2(i + 1)}</span><span class="in">${esc(actorOf(st))}</span>${tag}</p>` +
+        `<p class="say">${esc(st.say)}</p>` +
+        `<div class="split">${renderCodeWindow(st)}${renderState(st.state)}</div></div>`
+      );
+    })
+    .join("");
+
+  const versions = hasTwoVersions(steps)
+    ? `<div class="seg" role="group" aria-label="Which version of the flow">` +
+      `<button data-mode="before">Before</button>` +
+      `<button data-mode="diff" aria-pressed="true">Both</button>` +
+      `<button data-mode="after">After</button></div>`
+    : "";
+
+  const reach = REACH_LABEL[w.reach] ?? "";
+  return `
+<section class="wt" data-w="${idx}"${idx === 0 ? "" : " hidden"} style="--lanes:${actors.length}">
+  <header class="wth">
+    <div class="big">${pad2(idx + 1)}</div>
+    <div class="wtt">
+      <p class="cap">[ flow ${pad2(idx + 1)} / ${pad2(total)} ]<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span></p>
+      <h3>${esc(w.title || "Walkthrough")}</h3>
+      <div class="wmeta">
+        <p><span class="tl">Starts when</span>${esc(w.trigger)}</p>
+        ${w.whatChanged ? `<p><span class="tl">What changed</span>${esc(w.whatChanged)}</p>` : ""}
+      </div>
+    </div>
+  </header>
+  <div class="wtbar">
+    ${versions}
+    <button class="wplay" aria-pressed="false">Play</button>
+    <span class="wpos">step 1 of ${steps.length}</span>
+    <button class="wprev" disabled>&#8249; Back</button>
+    <button class="wnext">Next &#8250;</button>
+  </div>
+  <div class="seq"><div class="seqin">
+    <div class="lanes">${lanes}</div>
+    <div class="rows">${rows}</div>
+  </div></div>
+  <div class="panels">${panels}</div>
+</section>`;
+}
+
+function renderWalkthroughs(walkthroughs: any[]): string {
+  const flows = walkthroughs.filter((w) => (w.steps ?? []).length > 0);
+  if (flows.length === 0) return "";
+  return (
+    (flows.length > 1 ? renderFlowIndex(flows) : "") +
+    flows.map((w, i) => renderFlow(w, i, flows.length)).join("")
+  );
+}
+
+/**
+ * The flow player. One step at a time, with the arrow into the current step
+ * drawn as it is reached, and a switch between the flow as it was and as it
+ * is. Re-laying out the rows for a version goes through a view transition
+ * where the browser has one, so steps that survive slide to their new place
+ * and the ones that do not fade — which is the change, shown.
+ */
+function initFlows(root: HTMLElement): void {
+  const still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  const flows = [...root.querySelectorAll<HTMLElement>(".wt")];
+  const players = flows.map((wt) => {
+    const rows = [...wt.querySelectorAll<HTMLElement>(".srow")];
+    const panels = [...wt.querySelectorAll<HTMLElement>(".stepPanel")];
+    const play = wt.querySelector<HTMLButtonElement>(".wplay")!;
+    const lanes = wt.querySelectorAll(".lane").length;
+    let mode = "diff";
+    let at = 0;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const visible = () =>
+      rows.filter((r) => {
+        const ph = r.classList.contains("new") ? "new" : r.classList.contains("removed") ? "removed" : "";
+        return !(mode === "before" && ph === "new") && !(mode === "after" && ph === "removed");
+      });
+
+    const layout = () => {
+      const shown = visible();
+      rows.forEach((r) => (r.hidden = !shown.includes(r)));
+      // Each arrow runs from the lane of the step before it in THIS version.
+      shown.forEach((r, i) => {
+        const to = Number(r.dataset.a);
+        const from = i === 0 ? to : Number(shown[i - 1].dataset.a);
+        r.style.setProperty("--from", String(Math.min(from, to)));
+        r.style.setProperty("--span", String(Math.abs(to - from)));
+        r.classList.toggle("left", from > to);
+        r.classList.toggle("self", from === to);
+        r.classList.toggle("rt", from === to && to > (lanes - 1) / 2);
+      });
+    };
+
+    const show = (animate: boolean) => {
+      const shown = visible();
+      at = Math.max(0, Math.min(shown.length - 1, at));
+      const cur = shown[at];
+      shown.forEach((r, i) => {
+        r.classList.toggle("past", i < at);
+        r.classList.toggle("future", i > at);
+        r.toggleAttribute("aria-current", i === at);
+        if (i === at && animate && !still) {
+          r.classList.remove("draw");
+          void r.offsetWidth; // restart the draw animation
+          r.classList.add("draw");
+        }
+      });
+      panels.forEach((p) => p.classList.toggle("on", p.dataset.s === cur?.dataset.s));
+      wt.querySelector(".wpos")!.textContent = `step ${at + 1} of ${shown.length}`;
+      wt.querySelector<HTMLButtonElement>(".wprev")!.disabled = at === 0;
+      wt.querySelector<HTMLButtonElement>(".wnext")!.disabled = at === shown.length - 1;
+    };
+
+    const stop = () => {
+      if (timer !== undefined) clearInterval(timer);
+      timer = undefined;
+      play.setAttribute("aria-pressed", "false");
+      play.textContent = "Play";
+    };
+    const go = (i: number, fromPlayer = false) => {
+      if (!fromPlayer) stop();
+      at = i;
+      show(true);
+    };
+
+    wt.querySelector<HTMLElement>(".wprev")!.onclick = () => go(at - 1);
+    wt.querySelector<HTMLElement>(".wnext")!.onclick = () => go(at + 1);
+    rows.forEach((r) => (r.onclick = () => go(visible().indexOf(r))));
+    play.onclick = () => {
+      if (timer !== undefined) return stop();
+      if (at >= visible().length - 1) at = -1;
+      play.setAttribute("aria-pressed", "true");
+      play.textContent = "Pause";
+      go(at + 1, true);
+      timer = setInterval(() => {
+        if (at >= visible().length - 1) return stop();
+        go(at + 1, true);
+      }, 2600);
+    };
+
+    wt.querySelectorAll<HTMLButtonElement>(".seg button").forEach((b) => {
+      b.onclick = () => {
+        if (b.dataset.mode === mode) return;
+        stop();
+        const current = visible()[at];
+        const apply = () => {
+          mode = b.dataset.mode!;
+          wt.querySelectorAll(".seg button").forEach((x) =>
+            x.setAttribute("aria-pressed", String(x === b)),
+          );
+          layout();
+          // Stay on the same step if it exists in this version.
+          const idx = visible().indexOf(current);
+          at = idx >= 0 ? idx : Math.min(at, visible().length - 1);
+          show(false);
+        };
+        const doc = document as any;
+        if (!still && typeof doc.startViewTransition === "function") doc.startViewTransition(apply);
+        else apply();
+      };
+    });
+
+    layout();
+    show(false);
+    return { wt, go: (d: number) => go(at + d), stop };
+  });
+
+  // Choosing a flow from the index shows that one alone.
+  root.querySelectorAll<HTMLElement>(".fi").forEach((b) => {
+    b.onclick = () => {
+      const w = b.dataset.w;
+      players.forEach((p) => {
+        p.stop();
+        p.wt.hidden = p.wt.dataset.w !== w;
+      });
+      root.querySelectorAll(".fi").forEach((x) => x.toggleAttribute("aria-current", x === b));
+    };
+  });
+
+  document.addEventListener("keydown", (e) => {
+    const pane = document.getElementById("pane-walk");
+    if (!pane || pane.hidden) return;
+    if ((e.target as HTMLElement)?.closest?.("input, textarea")) return;
+    const p = players.find((x) => !x.wt.hidden);
+    if (!p) return;
+    if (e.key === "ArrowRight") p.go(1);
+    if (e.key === "ArrowLeft") p.go(-1);
+  });
 }
 
 // ---- the page -------------------------------------------------------------
@@ -707,32 +911,7 @@ function wire(root: HTMLElement): void {
     });
   }
 
-  // Walkthrough player: one step at a time.
-  root.querySelectorAll<HTMLElement>(".wt").forEach((wt) => {
-    const n = Number(wt.dataset.n);
-    let at = 0;
-    const show = () => {
-      wt.querySelectorAll<HTMLElement>(".stepPanel").forEach((p) =>
-        p.classList.toggle("on", Number(p.dataset.s) === at),
-      );
-      wt.querySelectorAll<HTMLElement>(".dot").forEach((d) =>
-        d.toggleAttribute("aria-current", Number(d.dataset.s) === at),
-      );
-      wt.querySelector(".wpos")!.textContent = `step ${at + 1} of ${n}`;
-      (wt.querySelector(".wprev") as HTMLButtonElement).disabled = at === 0;
-      (wt.querySelector(".wnext") as HTMLButtonElement).disabled = at === n - 1;
-    };
-    const go = (i: number) => {
-      at = Math.max(0, Math.min(n - 1, i));
-      show();
-    };
-    (wt.querySelector(".wprev") as HTMLElement).onclick = () => go(at - 1);
-    (wt.querySelector(".wnext") as HTMLElement).onclick = () => go(at + 1);
-    wt.querySelectorAll<HTMLElement>(".dot").forEach((d) => {
-      d.onclick = () => go(Number(d.dataset.s));
-    });
-    show();
-  });
+  initFlows(root);
 
   // An impacted file opens scrolled to its first affected line — scroll the
   // file's own box, never the page.

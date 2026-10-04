@@ -527,7 +527,7 @@ def test_a_walkthrough_that_is_not_a_trace_is_refused(tmp_path, monkeypatch):
         "whatChanged": "It now returns.",
         "steps": [{"say": "It runs."}],
     }]), sid)
-    assert "1 steps" in out and "3 to 7" in out
+    assert "1 steps" in out and "3 to 10" in out
 
 
 def test_a_traced_walkthrough_publishes(tmp_path, monkeypatch):
@@ -725,3 +725,31 @@ def test_part_on_a_review_that_was_not_split_is_refused(tmp_path, monkeypatch):
     sid = started(changedRepo(tmp_path), monkeypatch)
     assert "not split into parts" in mcp_server.publishReview(covered(), sid, part=1)
 
+
+# --- flows -----------------------------------------------------------------
+
+def flow(**over):
+    steps = [{"say": f"Step {n}.", "actor": "CLI", "phase": "new"} for n in range(3)]
+    return {"reach": "new", "title": "T", "trigger": "You run it",
+            "whatChanged": "It did not exist.", "steps": steps, **over}
+
+
+def test_a_new_flow_and_a_removed_flow_are_both_kinds(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(walkthroughs=[flow(), flow(reach="removed")]), sid)
+    assert "Published:" in out
+
+
+def test_there_is_no_cap_on_how_many_flows(tmp_path, monkeypatch):
+    """One per distinct flow the change touches — a feature branch may have five."""
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    out = mcp_server.publishReview(covered(walkthroughs=[flow(title=str(n)) for n in range(6)]), sid)
+    assert "Published:" in out
+
+
+def test_an_actor_is_a_lane_label_not_a_sentence(tmp_path, monkeypatch):
+    sid = started(changedRepo(tmp_path), monkeypatch)
+    steps = flow()["steps"]
+    steps[1]["actor"] = "the function that handles the incoming request body"
+    out = mcp_server.publishReview(covered(walkthroughs=[flow(steps=steps)]), sid)
+    assert "not published" in out and "steps[1] has actor" in out

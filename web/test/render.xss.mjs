@@ -41,14 +41,18 @@ const hostile = {
   risks: [{ path: ATTR, line: ATTR, text: TAG }],
   impacts: [{ path: "x.py", line: ATTR, kind: ATTR, why: TAG, symbol: ATTR, fromPath: ATTR }],
   impactWindows: { "x.py": { start: ATTR, lines: [TAG], truncated: false, total: ATTR } },
+  // Two, so the flow index renders as well as the flows themselves.
   walkthroughs: [
+    { title: ATTR, reach: ATTR, trigger: TAG, whatChanged: TAG, steps: [{ say: ATTR, actor: TAG }] },
     {
       title: TAG,
+      reach: ATTR,
       trigger: ATTR,
       whatChanged: ATTR,
       steps: [
         {
           say: TAG,
+          actor: ATTR,
           phase: ATTR,
           path: ATTR,
           state: { [ATTR]: TAG },

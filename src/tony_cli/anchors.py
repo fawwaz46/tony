@@ -29,13 +29,21 @@ from tony_cli.layout import changedRuns
 from tony_cli.source.local import confine, splitDiffByFile
 
 IMPACT_KINDS = ("breaks", "behavior-change", "compatible")
-REACHES = ("changed", "downstream")
+# A flow the diff added, altered, or deleted outright — or one it never
+# touched that now runs differently because it passes through an impact.
+REACHES = ("new", "changed", "removed", "downstream")
 PHASES = ("same", "new", "changed", "removed")
 
-# What the instructions ask for: between three and seven steps. Fewer is not a
+# What the instructions ask for: between three and ten steps. Fewer is not a
 # trace, more is a lecture — and both are things the agent was told before it
-# wrote one.
-MIN_STEPS, MAX_STEPS = 3, 7
+# wrote one. Ten rather than seven since steps carry an actor and the page
+# draws them as a sequence: a flow that crosses five parts of a system needs
+# room to come back.
+MIN_STEPS, MAX_STEPS = 3, 10
+
+# An actor names a lane on the flow diagram. It is a label, not a sentence —
+# a longer one does not fit a lane header and is not naming a component.
+MAX_ACTOR = 24
 
 # The most `state` entries a step may carry, also from the instructions. The
 # page renders them side by side and a fourth column does not fit.
@@ -264,8 +272,9 @@ def walkthroughProblems(i, walk, repo):
     if walk.get("reach") not in REACHES:
         problems.append(
             f"{where} has reach {walk.get('reach')!r}. It must be "
-            f'"changed" for a flow this diff altered, or "downstream" for one it '
-            "reaches through an impact."
+            f'"new" for a flow this diff added, "changed" for one it altered, '
+            f'"removed" for one it deleted, or "downstream" for one it reaches '
+            "through an impact."
         )
     problems += [f"{where} has no `{field}`."
                  for field in ("title", "trigger", "whatChanged")
@@ -307,6 +316,15 @@ def stepProblems(where, step, repo):
         problems.append(
             f"{where} has {len(state)} `state` entries. Keep it to {MAX_STATE} — "
             "the reader is shown them side by side."
+        )
+
+    actor = step.get("actor")
+    if actor is not None and (not isinstance(actor, str) or not actor.strip()):
+        problems.append(f"{where} has an `actor` that is not a name. Give one, or leave it out.")
+    elif isinstance(actor, str) and len(actor.strip()) > MAX_ACTOR:
+        problems.append(
+            f"{where} has actor {actor!r}. An actor is a lane label of a few words — "
+            f"{MAX_ACTOR} characters at most, like \"Browser\" or \"charges route\"."
         )
 
     lines, path = step.get("lines"), step.get("path")
