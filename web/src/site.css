@@ -126,7 +126,9 @@
 /* ---- three-up ---- */
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
   border-top: 1px solid var(--rule); }
-.three > div { padding: 1.5rem 1.5rem 1.75rem; border-right: 1px solid var(--rule); }
+/* min-width:0, or a column refuses to shrink below a command inside it and
+   pushes the page wider than a phone. */
+.three > div { padding: 1.5rem 1.5rem 1.75rem; border-right: 1px solid var(--rule); min-width: 0; }
 .three.two { grid-template-columns: repeat(2, 1fr); }
 .three > div:last-child { border-right: 0; }
 .three > div:first-child { padding-left: 0; }
@@ -224,11 +226,16 @@
   .hero .lede { font-size: 1rem; margin-bottom: 1.75rem; }
   .sec { padding: 2.5rem 0; }
   .cmd { max-width: 100%; }
-  .cmd code { font-size: .74rem; padding: .75rem .8rem; }
+  /* Wrap rather than scroll: a sideways scroll inside a box is invisible on
+     a phone, so the command just looks cut off. */
+  .cmd code { font-size: .74rem; padding: .75rem .8rem; white-space: pre-wrap;
+    overflow-wrap: anywhere; }
+  .cmd + p.body { margin-top: .6rem; }
+  /* Tall enough to actually try the tabs, not just read the demo's title. */
+  .demo-scroll { max-height: 80vh; }
   .cmd button { padding: 0 .8rem; }
   .three > div { padding: 1.25rem 0 1.5rem; }
   .demo .wrap { padding: 0 .75rem; }
-  .demo-scroll { max-height: 28rem; }
   .foot { flex-wrap: wrap; gap: .5rem 1rem; }
 }
 
