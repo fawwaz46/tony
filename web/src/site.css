@@ -49,11 +49,20 @@
     gap: 3rem; align-items: center; }
 }
 .hero-art { display: none; }
-@media (min-width: 64rem) { .hero-art { display: block; justify-self: center; } }
-/* Sized so 46 columns sit inside the space the copy leaves. The figure is
+/* The art takes the whole cell — full column width, full hero height — and
+   the script fits its character grid to whatever that comes to. */
+@media (min-width: 64rem) {
+  .hero-art { display: block; align-self: stretch; justify-self: stretch;
+    position: relative; min-height: 26rem; overflow: hidden;
+    /* Into the hero's own padding, top and bottom: the copy needs that air,
+       the figure does not, and height is what limits how big it can draw. */
+    margin: -4rem 0 -2.5rem; }
+  .hero-art .orb { position: absolute; inset: 0; }
+}
+/* The grid is fitted to the column by script; this only sets the glyph. The figure is
    drawn by glyph density alone — no accent, no colour: the ramp is the
    shading, the way it is in a terminal. */
-.orb { font-family: var(--mono); font-size: clamp(.78rem, 1.2vw, 1.08rem);
+.orb { font-family: var(--mono); font-size: clamp(.7rem, .95vw, .95rem);
   line-height: 1.06; letter-spacing: .02em; color: var(--ink-3); margin: 0;
   white-space: pre; user-select: none; }
 /* No negative `word-spacing` here, however tight the display type wants to be.

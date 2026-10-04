@@ -227,32 +227,57 @@ const error = Astro.url.searchParams.get("error");
   const still = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   if (pre) {
-    const COLS = 46, ROWS = 24;
     const RAMP = ".:-=+*#%@";
     const R1 = 1, R2 = 2, K2 = 5;
-    // The scale that fits a torus of radius R1+R2 across COLS, eased in so a
-    // full rotation never touches an edge and clips.
-    const K1 = ((COLS * K2 * 3) / (8 * (R1 + R2))) * 0.86;
 
-    const cells = new Array(ROWS * COLS);
-    const depth = new Float32Array(ROWS * COLS);
+    // The grid is sized from the column, not fixed: as many characters as fit
+    // across it and as many rows as the hero is tall, so the figure fills the
+    // half of the hero it was put there to fill at any desktop width.
+    let COLS = 0, ROWS = 0, K1 = 0, ASPECT = 0.5, STEP = 1;
+    let cells = [];
+    let depth = new Float32Array(0);
+
+    const measure = () => {
+      const box = pre.parentElement;
+      const probe = document.createElement("span");
+      probe.textContent = "M".repeat(10);
+      pre.appendChild(probe);
+      const cw = probe.getBoundingClientRect().width / 10;
+      pre.removeChild(probe);
+      const lh = parseFloat(getComputedStyle(pre).lineHeight) || cw * 2;
+      if (!cw || !box.clientWidth) return false;
+      COLS = Math.max(20, Math.floor(box.clientWidth / cw));
+      ROWS = Math.max(10, Math.floor(box.clientHeight / lh));
+      // A cell is taller than it is wide; y is scaled by the real ratio so
+      // the torus stays round whatever the font.
+      ASPECT = cw / lh;
+      // Fit whichever dimension is tighter, eased in so a full rotation never
+      // touches an edge and clips.
+      const fit = Math.min(COLS, ROWS / ASPECT);
+      K1 = ((fit * K2 * 3) / (8 * (R1 + R2))) * 0.92;
+      // Sample more finely as the grid grows, or a big torus shows holes.
+      STEP = Math.min(1, 46 / fit);
+      cells = new Array(ROWS * COLS);
+      depth = new Float32Array(ROWS * COLS);
+      return true;
+    };
 
     const frame = (A, B) => {
       cells.fill(" ");
       depth.fill(0);
       const cA = Math.cos(A), sA = Math.sin(A), cB = Math.cos(B), sB = Math.sin(B);
-      for (let th = 0; th < 6.283; th += 0.07) {
+      for (let th = 0; th < 6.283; th += 0.07 * STEP) {
         const ct = Math.cos(th), st = Math.sin(th);
-        for (let ph = 0; ph < 6.283; ph += 0.02) {
+        for (let ph = 0; ph < 6.283; ph += 0.02 * STEP) {
           const cp = Math.cos(ph), sp = Math.sin(ph);
           const cx = R2 + R1 * ct, cy = R1 * st;
           const x = cx * (cB * cp + sA * sB * sp) - cy * cA * sB;
           const y = cx * (sB * cp - sA * cB * sp) + cy * cA * cB;
           const ooz = 1 / (K2 + cA * cx * sp + cy * sA);
           const col = Math.round(COLS / 2 + K1 * ooz * x);
-          // Half scale vertically: a character cell is about twice as tall as
-          // it is wide, and an unscaled y stretches the figure into an oval.
-          const row = Math.round(ROWS / 2 - K1 * 0.5 * ooz * y);
+          // Scaled vertically by the cell's aspect: a character is about twice
+          // as tall as it is wide, and an unscaled y stretches it into an oval.
+          const row = Math.round(ROWS / 2 - K1 * ASPECT * ooz * y);
           const lum = cp * ct * sB - cA * ct * sp - sA * st + cB * (cA * st - ct * sA * sp);
           if (lum > 0 && col >= 0 && col < COLS && row >= 0 && row < ROWS) {
             const i = row * COLS + col;
@@ -283,6 +308,7 @@ const error = Astro.url.searchParams.get("error");
     };
 
     const sync = () => {
+      if (wide.matches && !measure()) return;
       if (!wide.matches) {
         running = false;
         pre.textContent = "";
@@ -295,6 +321,11 @@ const error = Astro.url.searchParams.get("error");
       }
     };
 
+    // Re-fit when the column changes size. A resize mid-rotation just picks
+    // up the new grid on the next frame.
+    new ResizeObserver(() => {
+      if (wide.matches && measure() && still.matches) pre.textContent = frame(A, B);
+    }).observe(pre.parentElement);
     wide.addEventListener("change", sync);
     still.addEventListener("change", sync);
     sync();
