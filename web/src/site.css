@@ -67,6 +67,8 @@
   white-space: pre; user-select: none; }
 /* The frosting. Marketing chrome, where the accent may mean "look here". */
 .orb .f { color: var(--accent); }
+/* Hi Tony's stage: over everything, under nothing, and never in the way of a click. */
+.orb.stage { position: absolute; margin: 0; overflow: hidden; pointer-events: none; z-index: 50; }
 /* No negative `word-spacing` here, however tight the display type wants to be.
    Safari applies `letter-spacing` to the space glyph as well as to letters, so
    the two stack: -.045 and -.15 together took the word space to about nothing

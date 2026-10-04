@@ -204,7 +204,7 @@ const error = Astro.url.searchParams.get("error");
     // The grid is sized from the column, not fixed: as many characters as fit
     // across it and as many rows as the hero is tall, so the figure fills the
     // half of the hero it was put there to fill at any desktop width.
-    let COLS = 0, ROWS = 0, K1 = 0, ASPECT = 0.5, STEP = 1;
+    let COLS = 0, ROWS = 0, K1 = 0, ASPECT = 0.5, STEP = 1, CW = 0, LH = 0;
     let cells = [];
     let depth = new Float32Array(0);
 
@@ -217,6 +217,8 @@ const error = Astro.url.searchParams.get("error");
       pre.removeChild(probe);
       const lh = parseFloat(getComputedStyle(pre).lineHeight) || cw * 2;
       if (!cw || !box.clientWidth) return false;
+      CW = cw;
+      LH = lh;
       COLS = Math.max(20, Math.floor(box.clientWidth / cw));
       ROWS = Math.max(10, Math.floor(box.clientHeight / lh));
       // A cell is taller than it is wide; y is scaled by the real ratio so
@@ -285,12 +287,12 @@ const error = Astro.url.searchParams.get("error");
      * frame is a few dozen elements rather than one per glyph. Safe to set as
      * innerHTML because every glyph comes from RAMP or a space.
      */
-    const toText = (grid) => {
+    const toText = (grid, cols = COLS, rows = ROWS) => {
       let out = "";
-      for (let r = 0; r < ROWS; r++) {
+      for (let r = 0; r < rows; r++) {
         let frosted = false;
-        for (let c = 0; c < COLS; c++) {
-          const cell = grid[r * COLS + c];
+        for (let c = 0; c < cols; c++) {
+          const cell = grid[r * cols + c];
           const f = cell.length > 1;
           if (f !== frosted) {
             out += f ? '<span class="f">' : "</span>";
@@ -369,14 +371,44 @@ const error = Astro.url.searchParams.get("error");
       }));
     };
 
+    /**
+     * The greeting plays on a stage: a see-through grid over the whole
+     * viewport, so the burst is not clipped at the edge of the donut's column.
+     * Its corner is snapped onto the donut's own cell grid, so a cell in the
+     * box and the same cell on the stage are the same pixels, and nothing
+     * jumps when the donut hands over to the stage and back.
+     */
+    const openStage = () => {
+      const rect = pre.getBoundingClientRect();
+      const offC = Math.floor(rect.left / CW), offR = Math.floor(rect.top / LH);
+      const left = rect.left - offC * CW, top = rect.top - offR * LH;
+      const width = document.documentElement.clientWidth - left;
+      const height = window.innerHeight - top;
+      const el = document.createElement("pre");
+      el.className = "orb stage";
+      el.setAttribute("aria-hidden", "true");
+      Object.assign(el.style, {
+        left: `${left + window.scrollX}px`, top: `${top + window.scrollY}px`,
+        width: `${width}px`, height: `${height}px`,
+      });
+      document.body.appendChild(el);
+      return { el, offC, offR, cols: Math.ceil(width / CW), rows: Math.ceil(height / LH) };
+    };
+
+    /** Put a glyph at donut-grid (c, r) — on the stage while one is up. */
     const plot = (grid, c, r, ch) => {
-      const col = Math.round(c), row = Math.round(r);
-      if (col >= 0 && col < COLS && row >= 0 && row < ROWS) grid[row * COLS + col] = ch;
+      const stage = hi?.stage;
+      const col = Math.round(c) + (stage ? stage.offC : 0);
+      const row = Math.round(r) + (stage ? stage.offR : 0);
+      const cols = stage ? stage.cols : COLS, rows = stage ? stage.rows : ROWS;
+      if (col >= 0 && col < cols && row >= 0 && row < rows) grid[row * cols + col] = ch;
     };
 
     /** One frame of the greeting at `t` ms in, or null when it is over. */
     const hiFrame = (t) => {
-      const grid = new Array(ROWS * COLS).fill(" ");
+      const { cols, rows } = hi.stage;
+      const grid = new Array(rows * cols).fill(" ");
+      const paint = () => toText(grid, cols, rows);
 
       // Tremble: the donut keeps turning while its rows shake harder.
       if (t < TREMBLE) {
@@ -391,7 +423,7 @@ const error = Astro.url.searchParams.get("error");
             if (ch !== " ") plot(grid, c + shift, r + (Math.random() < 0.04 ? 1 : 0), ch);
           }
         }
-        return toText(grid);
+        return paint();
       }
 
       // Everything after the tremble flies from one snapshot of the donut.
@@ -400,7 +432,9 @@ const error = Astro.url.searchParams.get("error");
           // Outward from the centre, measured square so the burst is round.
           const dx = g.c - COLS / 2, dy = (g.r - ROWS / 2) / ASPECT;
           const len = Math.hypot(dx, dy) || 1;
-          const speed = (0.35 + Math.random() * 0.75) * COLS * 0.5;
+          // Measured against the stage, not the box: the far ones leave the
+          // screen entirely and come back in for the letters.
+          const speed = (0.3 + Math.random() * 1.2) * hi.stage.cols * 0.4;
           return { ...g, ex: g.c + (dx / len) * speed, ey: g.r + (dy / len) * speed * ASPECT };
         });
         hi.hey = heyGlyphs();
@@ -416,7 +450,7 @@ const error = Astro.url.searchParams.get("error");
           const ch = Math.random() < 0.3 ? RAMP[Math.floor(Math.random() * RAMP.length)] : p.ch;
           plot(grid, p.c + (p.ex - p.c) * k, p.r + (p.ey - p.r) * k, ch);
         }
-        return toText(grid);
+        return paint();
       }
 
       // Form: from wherever the burst left each glyph, into the letters.
@@ -427,7 +461,7 @@ const error = Astro.url.searchParams.get("error");
           const p = f.from, q = f.to;
           plot(grid, p.ex + (q.c - p.ex) * k, p.ey + (q.r - p.ey) * k, k > 0.92 ? q.ch : p.ch);
         }
-        return toText(grid);
+        return paint();
       }
 
       // Hold: "hey", with a little shimmer so it reads as alive.
@@ -437,7 +471,7 @@ const error = Astro.url.searchParams.get("error");
           const ch = Math.random() < 0.04 ? RAMP[4 + Math.floor(Math.random() * 5)] : g.ch;
           plot(grid, g.c, g.r, ch);
         }
-        return toText(grid);
+        return paint();
       }
 
       // Return: the letters stream back onto the donut's next pose.
@@ -452,7 +486,7 @@ const error = Astro.url.searchParams.get("error");
           const p = f.from, q = f.to;
           plot(grid, p.c + (q.c - p.c) * k, p.r + (q.r - p.r) * k, k > 0.85 ? q.ch : p.ch);
         }
-        return toText(grid);
+        return paint();
       }
       return null;
     };
@@ -466,8 +500,10 @@ const error = Astro.url.searchParams.get("error");
           if (!hi.start) hi.start = now;
           const text = hiFrame(now - hi.start);
           if (text !== null) {
-            pre.innerHTML = text;
+            hi.stage.el.innerHTML = text;
+            pre.textContent = "";
           } else {
+            hi.stage.el.remove();
             hi = null;
             button?.removeAttribute("disabled");
           }
@@ -499,7 +535,7 @@ const error = Astro.url.searchParams.get("error");
         }, HOLD + 400);
         return;
       }
-      hi = { start: 0, flyers: null, hey: null, back: null };
+      hi = { start: 0, flyers: null, hey: null, back: null, stage: openStage() };
     });
 
     const sync = () => {
