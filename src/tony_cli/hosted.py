@@ -505,6 +505,19 @@ def cacheInstructions(saved):
         pass  # A cache that cannot be written costs a few KB, not a review.
 
 
+# Which instruction document this client's validator enforces. The document is
+# served and the validator ships in the package, so the two can disagree: a
+# site that starts asking for `reach: "new"` would have every older install
+# rejecting the reviews its own instructions asked for. The client names the
+# contract it can check and the site serves that one; a client that names none
+# is from before this existed and gets contract 1.
+#
+# Bump it in the same change that makes the validator accept something the
+# previous document did not ask for, and keep the old document on the site
+# until the installs that need it are gone.
+CONTRACT = "2"
+
+
 def fetchInstructions():
     """The current instruction document. Returns (saved, problem).
 
@@ -514,7 +527,9 @@ def fetchInstructions():
     """
     base = apiBase()
     cached = cachedInstructions()
-    headers = {"If-None-Match": f'"{cached["version"]}"'} if cached else {}
+    headers = {"X-Tony-Contract": CONTRACT}
+    if cached:
+        headers["If-None-Match"] = f'"{cached["version"]}"'
 
     try:
         resp = follow(httpx.get, f"{base}/api/instructions", headers=headers, timeout=15)

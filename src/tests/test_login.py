@@ -394,3 +394,18 @@ def test_a_redirect_off_the_site_does_not_carry_the_token(monkeypatch):
     url, problem = hosted.publish("{}")
     assert url is None and "308" in problem
     assert not any("evil.test" in u for u in seen)
+
+
+def test_the_client_names_the_contract_its_validator_enforces(monkeypatch):
+    """The document is served and the validator is installed, so a site that
+    tightens one must not reach a client with the other. The header is how the
+    site knows which document this install can actually check."""
+    sent = {}
+
+    def get(url, **kwargs):
+        sent.update(kwargs.get("headers") or {})
+        return FakeResponse({"version": "v2", "document": "D"})
+
+    monkeypatch.setattr(hosted.httpx, "get", get)
+    hosted.fetchInstructions()
+    assert sent["X-Tony-Contract"] == hosted.CONTRACT
