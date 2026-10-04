@@ -196,6 +196,9 @@ const error = Astro.url.searchParams.get("error");
 
   if (pre) {
     const RAMP = ".:-=+*#%@";
+    // Marks a glyph as frosting. Not a character the ramp uses, so a cell is
+    // frosted exactly when it starts with this.
+    const FROST = "~";
     const R1 = 1, R2 = 2, K2 = 5;
 
     // The grid is sized from the column, not fixed: as many characters as fit
@@ -251,14 +254,18 @@ const error = Astro.url.searchParams.get("error");
             const i = row * COLS + col;
             if (ooz > depth[i]) {
               depth[i] = ooz;
-              cells[i] = RAMP[Math.min(RAMP.length - 1, Math.round(lum * 6))];
+              // Frosting: the top of the tube (st > 0 in the donut's own
+              // frame, so it turns with it), with an edge that drips down
+              // the sides in a few places around the ring. A frosted cell
+              // carries FROST in front of its glyph, which is how the flag
+              // travels with the glyph through everything Hi Tony does to it.
+              const edge = 0.35 - 0.6 * Math.pow(Math.max(0, Math.sin(ph * 7 + 1)), 4);
+              cells[i] = (st > edge ? FROST : "") + RAMP[Math.min(RAMP.length - 1, Math.round(lum * 6))];
             }
           }
         }
       }
-      let out = "";
-      for (let r = 0; r < ROWS; r++) out += cells.slice(r * COLS, (r + 1) * COLS).join("") + "\n";
-      return out;
+      return toText(cells);
     };
 
     let A = 0.9, B = 0.4, last = 0, running = false;
@@ -273,9 +280,26 @@ const error = Astro.url.searchParams.get("error");
     const TREMBLE = 700, EXPLODE = 750, FORM = 1100, HOLD = 1400, RETURN = 1200;
     let hi = null; // { start, flyers, hey } while the greeting plays
 
+    /**
+     * The grid as markup: runs of frosting wrapped in one span each, so a
+     * frame is a few dozen elements rather than one per glyph. Safe to set as
+     * innerHTML because every glyph comes from RAMP or a space.
+     */
     const toText = (grid) => {
       let out = "";
-      for (let r = 0; r < ROWS; r++) out += grid.slice(r * COLS, (r + 1) * COLS).join("") + "\n";
+      for (let r = 0; r < ROWS; r++) {
+        let frosted = false;
+        for (let c = 0; c < COLS; c++) {
+          const cell = grid[r * COLS + c];
+          const f = cell.length > 1;
+          if (f !== frosted) {
+            out += f ? '<span class="f">' : "</span>";
+            frosted = f;
+          }
+          out += cell[cell.length - 1];
+        }
+        out += (frosted ? "</span>" : "") + "\n";
+      }
       return out;
     };
 
@@ -442,7 +466,7 @@ const error = Astro.url.searchParams.get("error");
           if (!hi.start) hi.start = now;
           const text = hiFrame(now - hi.start);
           if (text !== null) {
-            pre.textContent = text;
+            pre.innerHTML = text;
           } else {
             hi = null;
             button?.removeAttribute("disabled");
@@ -451,7 +475,7 @@ const error = Astro.url.searchParams.get("error");
         if (!hi) {
           A += 0.05;
           B += 0.022;
-          pre.textContent = frame(A, B);
+          pre.innerHTML = frame(A, B);
         }
       }
       requestAnimationFrame(tick);
@@ -464,13 +488,13 @@ const error = Astro.url.searchParams.get("error");
       if (still.matches) {
         // No flying for anyone who asked for less motion: just the word, then
         // the donut back as it was.
-        pre.textContent = toText((() => {
+        pre.innerHTML = toText((() => {
           const grid = new Array(ROWS * COLS).fill(" ");
           for (const g of heyGlyphs()) plot(grid, g.c, g.r, g.ch);
           return grid;
         })());
         setTimeout(() => {
-          pre.textContent = frame(A, B);
+          pre.innerHTML = frame(A, B);
           button.removeAttribute("disabled");
         }, HOLD + 400);
         return;
@@ -485,7 +509,7 @@ const error = Astro.url.searchParams.get("error");
         pre.textContent = "";
       } else if (still.matches) {
         running = false;
-        pre.textContent = frame(A, B);
+        pre.innerHTML = frame(A, B);
       } else if (!running) {
         running = true;
         requestAnimationFrame(tick);
@@ -495,7 +519,7 @@ const error = Astro.url.searchParams.get("error");
     // Re-fit when the column changes size. A resize mid-rotation just picks
     // up the new grid on the next frame.
     new ResizeObserver(() => {
-      if (wide.matches && measure() && still.matches) pre.textContent = frame(A, B);
+      if (wide.matches && measure() && still.matches) pre.innerHTML = frame(A, B);
     }).observe(pre.parentElement);
     wide.addEventListener("change", sync);
     still.addEventListener("change", sync);
