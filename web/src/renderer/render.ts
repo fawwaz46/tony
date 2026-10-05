@@ -415,6 +415,11 @@ function renderImpacts(impacts: any[], windows: Record<string, Window>): string 
     .join("");
 }
 
+/** Whether the reader has asked for less motion. Every animation checks this. */
+function calm(): boolean {
+  return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+}
+
 // ---- walkthroughs ---------------------------------------------------------
 
 function renderCodeWindow(st: any): string {
@@ -610,7 +615,7 @@ function renderWalkthroughs(walkthroughs: any[]): string {
  * and the ones that do not fade — which is the change, shown.
  */
 function initFlows(root: HTMLElement): void {
-  const still = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  const still = calm();
   const flows = [...root.querySelectorAll<HTMLElement>(".wt")];
   const players = flows.map((wt) => {
     const rows = [...wt.querySelectorAll<HTMLElement>(".srow")];
@@ -744,7 +749,6 @@ function initFlows(root: HTMLElement): void {
   const showFlow = (w: string, scroll: boolean) => {
     const target = players.find((p) => p.wt.dataset.w === w);
     if (!target) return;
-    const was = target.wt.hidden;
     players.forEach((p) => {
       p.stop();
       p.wt.hidden = p !== target;
@@ -753,12 +757,6 @@ function initFlows(root: HTMLElement): void {
       x.toggleAttribute("aria-current", x.dataset.w === w),
     );
     place(true);
-    // The flow that comes in eases in, so a switch reads as a switch.
-    if (was && !still) {
-      target.wt.classList.remove("enter");
-      void target.wt.offsetWidth; // restart the animation
-      target.wt.classList.add("enter");
-    }
     if (scroll) target.wt.scrollIntoView?.({ block: "start", behavior: still ? "auto" : "smooth" });
   };
   root.querySelectorAll<HTMLElement>(".fi").forEach((b) => {
@@ -824,7 +822,7 @@ export function renderReview(root: HTMLElement, review: Payload): void {
   </div>
 </header>
 ${looseHtml}
-<nav class="tabs-main">
+<nav class="tabs-main"><span class="tabmark" aria-hidden="true"></span>
   <button class="mt" data-t="files" aria-selected="true">File changes <span class="c">${files.length}</span></button>
   <button class="mt" data-t="blast" aria-selected="false"${reached ? "" : " disabled"}>Blast radius <span class="c">${reached}</span></button>
   <button class="mt" data-t="walk" aria-selected="false"${walkthroughs.length ? "" : " disabled"}>How it works <span class="c">${walkthroughs.length}</span></button>
@@ -855,13 +853,31 @@ ${looseHtml}
 function wire(root: HTMLElement): void {
   const byId = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
 
-  // Top-level tabs.
+  // Top-level tabs. The selected one is underlined by a single mark that
+  // slides between them, placed from the tab's own box and re-placed when the
+  // bar changes size (a phone, or the page first laying out).
+  const tabBar = root.querySelector<HTMLElement>(".tabs-main");
+  const tabMark = root.querySelector<HTMLElement>(".tabmark");
+  const still = calm();
+  const placeTab = (animate: boolean) => {
+    const tab = root.querySelector<HTMLElement>('.mt[aria-selected="true"]');
+    if (!tabBar || !tabMark || !tab || !tabBar.offsetWidth) return;
+    // The first tab has no left padding; the mark spans the label either way.
+    tabMark.classList.toggle("slide", animate && !still);
+    tabMark.style.transform = `translateX(${tab.offsetLeft}px)`;
+    tabMark.style.width = `${tab.offsetWidth}px`;
+  };
+  placeTab(false);
+  if (tabBar && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => placeTab(false)).observe(tabBar);
+  }
   root.querySelectorAll<HTMLElement>(".mt").forEach((b) =>
     b.addEventListener("click", () => {
       const t = b.dataset.t;
       root.querySelectorAll(".mt").forEach((x) =>
         x.setAttribute("aria-selected", String((x as HTMLElement).dataset.t === t)),
       );
+      placeTab(true);
       byId("pane-files").hidden = t !== "files";
       byId("pane-blast").hidden = t !== "blast";
       byId("pane-walk").hidden = t !== "walk";

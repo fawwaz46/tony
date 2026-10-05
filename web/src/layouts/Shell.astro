@@ -71,5 +71,31 @@ const here = Astro.url.pathname + Astro.url.search;
         <span>Reviews are encrypted at rest. tony holds the key.</span>
       </footer>
     </div>
+    <script>
+      // Sections fade up as they come on screen, the same way content does
+      // everywhere else on the site. The class is only ever added here, so a
+      // page without script shows everything at once. The hero has motion of
+      // its own and is left alone.
+      const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const sections = [...document.querySelectorAll<HTMLElement>(".sec")];
+      if (!calm && "IntersectionObserver" in window) {
+        const seen = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (!e.isIntersecting) continue;
+              e.target.classList.add("in");
+              seen.unobserve(e.target);
+            }
+          },
+          // A share of the section rather than a margin off the viewport, so the
+          // last one on the page can still be reached.
+          { threshold: 0.1 },
+        );
+        for (const el of sections) {
+          el.classList.add("reveal");
+          seen.observe(el);
+        }
+      }
+    </script>
   </body>
 </html>

@@ -158,7 +158,7 @@ areas, not only the chrome.
 
 | State | Treatment |
 |---|---|
-| Selected tab | `--ink` text + 1px `--ink` bottom border |
+| Selected tab | `--ink` text + a 1px `--ink` underline that slides between tabs |
 | Selected step dot | Inverted: `--ink` background, `--ground` text |
 | Hover (row) | Lift to `--s1` |
 | Hover (control) | Border to `--rule-3`, text to `--ink` |
@@ -167,6 +167,24 @@ areas, not only the chrome.
 | Highlighted code line | `--s3` background + `inset 2px 0 0 --rule-3` |
 
 The inset bar rather than a background wash is what lets a highlighted line stay readable.
+
+---
+
+## Motion
+
+One vocabulary for the whole site, defined once at the top of `styles.css`. Only three things
+move:
+
+- **State** (hover, selection, focus) fades its colour, border and surface over `--t-state`
+  (.18s).
+- **Content that appears** fades up half a rem over `--t-enter` (.4s): a tab, a file, a flow, an
+  opened panel, a loaded review, a page section scrolling in. Panes shown by removing `hidden`
+  get it from CSS alone, because an animation replays whenever an element starts rendering.
+- **A marker of what is selected** slides to its new place over `--t-slide` (.35s): the tab
+  underline, the flow index bar.
+
+All of it uses one curve, `--ease`. Content leaving does the reverse, briefly. Reduced motion
+keeps every state and drops all movement, from one rule.
 
 ---
 

@@ -16,6 +16,37 @@
   --sans:'Favorit',system-ui,-apple-system,sans-serif;
   --mono:'Favorit Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
 }
+
+/* ---- motion ----
+   One vocabulary for the whole site. Three things move, and only these:
+   - state (hover, selection, focus) fades its colour, border and surface;
+   - content that appears fades up a few pixels, whether a page section
+     scrolling in, a tab, a file, a flow, an opened panel or a loaded review;
+   - a marker of what is selected slides to its new place.
+   Everything shares one curve, so the site moves like one thing. Reduced
+   motion keeps every state and drops the movement. */
+:root{--ease:cubic-bezier(.2,.7,.2,1);--t-state:.18s;--t-enter:.4s;--t-slide:.35s}
+:where(a,button,summary,label,input,.rrow,.fi,.tfb,.tdh,.way,.cmd){
+  transition:color var(--t-state) ease,background-color var(--t-state) ease,
+    border-color var(--t-state) ease,opacity var(--t-state) ease}
+@keyframes enter{from{opacity:0;transform:translateY(.5rem)}}
+/* Each of these is shown by removing `hidden` or opening a <details>, and a
+   CSS animation replays whenever an element starts being rendered, so every
+   switch eases in with no script. */
+#pane-files,#pane-blast,#pane-walk,.file:not(details),.wt,.pane,.ann.risk,
+details[open] > :not(summary),.entering{animation:enter var(--t-enter) var(--ease)}
+/* Page sections below the first screen, revealed as they scroll in. The class
+   is added by script, so without it everything is simply there. */
+.reveal{opacity:0;transform:translateY(.75rem);
+  transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.reveal.in{opacity:1;transform:none}
+.leaving{opacity:0;transform:translateY(-.25rem);
+  transition:opacity var(--t-slide) var(--ease),transform var(--t-slide) var(--ease)}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important}
+  .reveal{opacity:1;transform:none}
+}
 *{box-sizing:border-box}
 html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 body{margin:0;padding:0 2rem 6rem;background:var(--ground);color:var(--ink-2);
@@ -43,19 +74,24 @@ h1{font-size:clamp(1.25rem,2.3vw,1.65rem);font-weight:700;letter-spacing:-.042em
 /* Section headers and tabs are eyebrows: uppercase mono, positive tracking, bracketed. */
 /* Scrolls rather than wraps: three uppercase tabs do not fit a phone, and
    wrapping them puts a lone tab on its own line above the diff. */
-.tabs-main{display:flex;gap:0;border-bottom:1px solid var(--rule);margin-bottom:1.25rem;
+/* The rule is a background, not a border, so the sliding underline can sit
+   exactly on it inside a box that clips to its padding edge. */
+.tabs-main{display:flex;gap:0;margin-bottom:1.25rem;position:relative;
+  background:linear-gradient(var(--rule),var(--rule)) bottom/100% 1px no-repeat;
   overflow-x:auto;scrollbar-width:none}
+.tabmark{position:absolute;left:0;bottom:0;height:1px;width:0;background:var(--ink);
+  pointer-events:none}
+.tabmark.slide{transition:transform var(--t-slide) var(--ease),width var(--t-slide) var(--ease)}
 .tabs-main::-webkit-scrollbar{display:none}
 .mt{flex:none}
 .mt{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
-  background:none;border:0;border-bottom:1px solid transparent;color:var(--ink-4);
-  padding:.9rem 1.15rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;
-  margin-bottom:-1px}
-.mt:first-child{padding-left:0}
+  background:none;border:0;color:var(--ink-4);
+  padding:.9rem 1.15rem;cursor:pointer;display:flex;align-items:center;gap:.6rem}
+.mt:first-of-type{padding-left:0}
 .mt::before{content:"[";color:var(--rule-3)}
 .mt::after{content:"]";color:var(--rule-3)}
 .mt:hover:not(:disabled){color:var(--ink-3)}
-.mt[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.mt[aria-selected="true"]{color:var(--ink)}
 .mt[aria-selected="true"]::before,.mt[aria-selected="true"]::after{color:var(--ink-4)}
 .mt:disabled{color:var(--rule-3);cursor:default}
 .mt:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
@@ -195,10 +231,9 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .findex{position:relative}
 .fimark{position:absolute;left:0;top:0;width:2px;height:0;background:var(--ink);z-index:1;
   pointer-events:none}
-.fimark.slide{transition:transform .35s cubic-bezier(.2,.7,.2,1),height .35s cubic-bezier(.2,.7,.2,1)}
+.fimark.slide{transition:transform var(--t-slide) var(--ease),height var(--t-slide) var(--ease)}
 .fi[aria-current]{color:var(--ink)}
-.fi{transition:color .25s,background-color .2s}
-.fi .ix,.fi .fn{transition:color .25s}
+.fi .ix,.fi .fn{transition:color var(--t-state) ease}
 .fi[aria-current] .ix,.fi[aria-current] .fn{color:var(--ink)}
 .fi:focus-visible{outline:1px solid var(--rule-3);outline-offset:-1px}
 .fi .ix{font:400 .7rem/1 var(--mono);color:var(--ink-4);padding-left:.9rem}
@@ -216,8 +251,6 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 
 .wt{border-top:1px solid var(--ink);padding:1.5rem 0 3rem}
 .wt[hidden]{display:none}
-.wt.enter{animation:flow-enter .35s cubic-bezier(.2,.7,.2,1)}
-@keyframes flow-enter{from{opacity:0;transform:translateY(.5rem)}}
 .wth{margin-bottom:2.25rem}
 .wth .cap .fr{margin-left:1rem}
 /* Flow-to-flow navigation, in the eyebrow, because the index scrolls away. */
@@ -365,8 +398,6 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 @media (prefers-reduced-motion:reduce){
   .srow.draw .arrow,.srow.draw .node,.stepPanel.on .sv .now{animation:none}
   .stepPanel{transition:none}
-  .fimark.slide,.fi,.fi .ix,.fi .fn{transition:none}
-  .wt.enter{animation:none}
   ::view-transition-group(*){animation:none}
 }
 

@@ -95,7 +95,9 @@ const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_D
               b.textContent = "Deleting…";
               const resp = await fetch(`/api/reviews/${b.dataset.delId}`, { method: "DELETE" });
               if (resp.ok) {
-                row.remove();
+                // Out the way content comes in: a short fade, then gone.
+                row.classList.add("leaving");
+                setTimeout(() => row.remove(), 350);
               } else {
                 b.disabled = false;
                 b.textContent = "Delete";
