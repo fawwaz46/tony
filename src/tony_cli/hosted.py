@@ -129,6 +129,114 @@ def clearToken():
         return False
 
 
+def savedLogin():
+    """The account the saved token publishes to, or ""."""
+    try:
+        with open(CREDENTIALS, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data.get("login") or data.get("githubLogin") or ""
+    except (OSError, json.JSONDecodeError):
+        return ""
+
+
+# --- approving a sandboxed agent -------------------------------------------
+#
+# A sandbox (an Amp orb, Codex cloud, Claude Code on the web) has no browser
+# to run `tony login` in and starts with no credentials. Instead tony asks the
+# site for an approval link, the agent shows it to its person, they approve it
+# in a browser where they are signed in, and the next tony_start collects a
+# token. The poll key that collects it never leaves this machine: it is kept in
+# LINK, owner-only, and the site hands the token to nothing else.
+
+LINK = os.path.join(CONFIG_DIR, "link.json")
+
+# How long one tony_start waits for an approval that has not landed yet. Long
+# enough to cover "approved it and said so at once", short enough that no
+# agent gives up on the tool call.
+LINK_WAIT_SECONDS = 20
+
+
+def _writePrivate(path, data):
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+
+
+def pendingLink():
+    """The approval link this machine is waiting on, or None once it has expired."""
+    try:
+        with open(LINK, encoding="utf-8") as fh:
+            link = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(link, dict) or link.get("expiresAt", 0) <= time.time():
+        clearLink()
+        return None
+    return link
+
+
+def clearLink():
+    try:
+        os.remove(LINK)
+    except OSError:
+        pass
+
+
+def startLink(agent=""):
+    """Ask the site for an approval link. Returns (link, problem)."""
+    base = apiBase()
+    try:
+        resp = follow(httpx.post, f"{base}/api/link", json={"agent": agent}, timeout=15)
+    except httpx.HTTPError as e:
+        return None, f"could not reach {base}: {e}"
+    body = asJson(resp)
+    if resp.status_code != 200 or not body or not body.get("pollKey"):
+        detail = (body or {}).get("error") or f"status {resp.status_code}"
+        return None, f"the site would not start an approval link ({detail})."
+    link = {
+        "url": body["url"],
+        "code": body["code"],
+        "pollKey": body["pollKey"],
+        "expiresAt": time.time() + int(body.get("expiresIn", 600)),
+    }
+    _writePrivate(LINK, link)
+    return link, None
+
+
+def collectLink(wait=LINK_WAIT_SECONDS, interval=2):
+    """Collect the token for the pending link, waiting up to `wait` seconds.
+
+    Returns (status, detail): ("approved", login), ("pending", None),
+    ("expired", None), or ("error", message). An approved token is saved
+    before this returns, and the link is spent either way it ends.
+    """
+    link = pendingLink()
+    if not link:
+        return "expired", None
+    base = apiBase()
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            resp = follow(httpx.post, f"{base}/api/link/poll",
+                          json={"pollKey": link["pollKey"]}, timeout=15)
+        except httpx.HTTPError as e:
+            return "error", f"could not reach {base}: {e}"
+        body = asJson(resp) or {}
+        if resp.status_code == 200 and body.get("token"):
+            saveToken(body["token"], body.get("login") or "")
+            clearLink()
+            return "approved", body.get("login") or ""
+        if resp.status_code == 404:
+            clearLink()
+            return "expired", None
+        if resp.status_code != 202:
+            return "error", body.get("error") or f"status {resp.status_code}"
+        if time.monotonic() + interval > deadline:
+            return "pending", None
+        time.sleep(interval)
+
+
 # --- login -----------------------------------------------------------------
 
 def login(argv=None):
@@ -416,6 +524,7 @@ def logout():
             print("tony: could not reach the site to revoke this token; "
                   "removing it locally anyway.", file=sys.stderr)
 
+    clearLink()
     if clearToken():
         print("tony: logged out.")
     else:

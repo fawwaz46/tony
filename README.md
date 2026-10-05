@@ -56,6 +56,11 @@ writes the review, and calls `tony_publish`. What comes back is a URL. Reviews
 are published to your account; the page is the deliverable, so the agent hands
 you the link rather than pasting the review into the chat.
 
+In a cloud sandbox (an Amp orb, Codex cloud, Claude Code on the web) there is
+no browser for `tony login`. The agent shows you a link and a six-character
+code instead; approve it on tony-cli.com and tell the agent you have. That
+sandbox stays signed in after.
+
 tony reviews **committed** work: the page shows code straight from disk, so the
 working tree has to match the revision under review.
 
@@ -66,7 +71,7 @@ working tree has to match the revision under review.
 | Command | What it does |
 |---|---|
 | `tony connect [host ...]` | Write the MCP config for Claude Code, Codex, Cursor, or Amp. Named hosts only, or all four it finds. |
-| `tony login` / `tony logout` | Your account on the tony site. Publishing needs it; nothing else does. |
+| `tony login` / `tony logout` | Your account on the tony site. Publishing needs it; nothing else does. A sign-in can only publish; your logins are listed, and revocable, on your reviews page. |
 | `tony mcp` | Run the MCP server on stdio. Your agent runs this, not you. |
 | `tony update` | Upgrade to the latest release, using whichever of uv, pipx or pip installed tony. Checks PyPI first and tells you if you're already current. |
 

@@ -90,8 +90,11 @@ def test_a_rejection_tells_the_agent_what_to_do_next():
 def test_start_refuses_before_the_agent_spends_a_context(tmp_path, monkeypatch):
     """Learning there is nowhere to publish after writing the review is too late."""
     monkeypatch.setattr(mcp_server.hosted, "savedToken", lambda: None)
+    monkeypatch.setattr(mcp_server.hosted, "pendingLink", lambda: None)
+    monkeypatch.setattr(mcp_server.hosted, "startLink", lambda agent="": (
+        {"url": "https://site.test/link/x", "code": "K7F2QX", "pollKey": "p"}, None))
     out = startReview(str(makeRepo(tmp_path)))
-    assert "not logged in" in out and "Do not write the review" in out
+    assert "not signed in" in out and "Do not write the review" in out
 
 
 def test_start_refuses_a_dirty_tree(tmp_path, monkeypatch):

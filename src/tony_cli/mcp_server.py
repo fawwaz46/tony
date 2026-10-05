@@ -63,12 +63,50 @@ PARTS_LOCK = threading.Lock()
 # annotations written after that are written from a summary of the code.
 PART_CHARS = 150_000
 
-NOT_LOGGED_IN = """\
-tony: this machine is not logged in, so there is nowhere to publish to.
+def approvalNeeded(link, again=False):
+    """What the agent is told when this machine has no token yet."""
+    lead = (
+        "tony: still waiting for the user to approve tony."
+        if again else
+        "tony: this machine is not signed in to tony yet, so there is nowhere to publish."
+    )
+    return (
+        f"{lead}\n\n"
+        "  Show the user this link and code, exactly:\n\n"
+        f"    Approve tony: {link['url']}\n"
+        f"    The page should show the code {link['code']}.\n\n"
+        "  Tell them to approve it only if the codes match. Then stop and wait. When\n"
+        "  they say they have approved it, call tony_start again with the same\n"
+        "  arguments. Do not write the review before then; it would have nowhere to go.\n"
+        "  (On their own computer, running `tony login` in a terminal works too.)"
+    )
 
-  Ask the developer to run `tony login` — it takes one browser approval — then
-  call tony_start again. Do not write the review until that is done; it would
-  have nowhere to go."""
+
+def signIn(harness):
+    """None when this machine can publish, else what to tell the agent.
+
+    A machine with a token is done. Otherwise it is either waiting on a link it
+    already started, which this collects if approved, or it starts one. The
+    link is the way in for sandboxes, which have no browser for `tony login`.
+    """
+    if hosted.savedToken():
+        return None, ""
+    if hosted.pendingLink():
+        status, detail = hosted.collectLink()
+        if status == "approved":
+            return None, detail
+        if status == "pending":
+            return approvalNeeded(hosted.pendingLink(), again=True), ""
+        if status == "error":
+            return f"tony: could not check the approval link: {detail}\n  Try tony_start again.", ""
+        # Expired or already spent: start a fresh one below.
+    link, problem = hosted.startLink(agent=(harness[0] if harness else "") or "")
+    if problem:
+        return (
+            f"tony: this machine is not signed in, and {problem}\n"
+            "  Ask the user to run `tony login`, or try tony_start again.", ""
+        )
+    return approvalNeeded(link), ""
 
 
 def parseRange(spec):
@@ -117,8 +155,9 @@ def startReview(path=None, range=None, harness=("", ""), sessionId=None, part=No
     # Checked first, and deliberately before anything expensive: an agent that
     # writes a full review and only then learns it cannot be published has
     # spent the user's context for nothing.
-    if not hosted.savedToken():
-        return NOT_LOGGED_IN
+    blocked, justApproved = signIn(harness)
+    if blocked:
+        return blocked
 
     if sessionId or part:
         return partReview(sessionId, part)
@@ -192,6 +231,7 @@ def startReview(path=None, range=None, harness=("", ""), sessionId=None, part=No
         f"sessionId: {sid}\n"
         f"repository: {os.path.basename(root)} at {root}\n"
         f"range: {base}...{head}\n"
+        f"{accountLine(justApproved)}"
         f"{updateLine(check)}\n"
     )
 
@@ -373,6 +413,19 @@ def publishWhole(session, review, model):
     session["attempts"] = sum(p["attempts"] for p in parts)
     model = model or next((p["model"] for p in parts if p["model"]), "")
     return publishPage(session, merged, model, incompleteNotice(gaps) if gaps else "")
+
+
+def accountLine(justApproved=""):
+    """Which account this review publishes to, so a wrong one is caught early."""
+    login = justApproved or hosted.savedLogin()
+    if not login:
+        return ""
+    if justApproved:
+        return (
+            f"account: {login} (just approved). Tell the user this review will publish\n"
+            f"  to {login}'s tony account before you start, in case that is not who they meant.\n"
+        )
+    return f"account: {login}\n"
 
 
 def updateLine(check):
