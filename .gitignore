@@ -26,3 +26,6 @@ uv.lock
 
 # The dev viewer's hand-written payload: a review of whatever repo you ran in.
 web/src/fixtures/local.json
+
+# Local secrets, such as the dev database URL in web/.env.local.
+.env.local
