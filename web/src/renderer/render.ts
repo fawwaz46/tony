@@ -961,8 +961,12 @@ function wire(root: HTMLElement): void {
       });
       if (shown) onShow(shown);
       // The previous file may have been scrolled deep; the next one must start
-      // at its own top rather than halfway down.
-      if (scroll) pane.scrollIntoView?.({ block: "start" });
+      // at its own top rather than halfway down. Only then: if the top of the
+      // pane is on screen already, the reader is looking at it, and moving the
+      // page would only take the header away from under them.
+      if (scroll && pane.getBoundingClientRect().top < 0) {
+        pane.scrollIntoView?.({ block: "start", behavior: calm() ? "auto" : "smooth" });
+      }
     };
 
     rows.forEach((button, index) => {
