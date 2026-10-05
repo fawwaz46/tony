@@ -114,7 +114,7 @@ Book is the step that says "important" without shouting.
 | Step prose (`.say`) | `1.05rem` | 400 | `-.008em` | lh 1.5, max 60ch |
 | Body | `15px` | 400 | 0 | lh 1.55 |
 | Annotation prose | `.85rem` | 400 | 0 | lh 1.55, max 64ch |
-| Diff / code line | `.75rem` mono | 400 | 0 | lh 1.5 |
+| Diff / code line | `.8125rem` mono | 400 | 0 | lh 1.7 |
 | Section eyebrow, tabs | `.68rem` mono | 500 | **`+.16em`** | uppercase, bracketed |
 | Caption, chips | `.62rem` mono | 500 | `+.16em` | uppercase |
 | Brand mark | `.72rem` mono | 500 | `+.22em` | uppercase |

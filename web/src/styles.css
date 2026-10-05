@@ -125,7 +125,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 
 /* ---- the dense interior ---- */
 .hunk{overflow-x:auto;background:var(--s1);border-bottom:1px solid var(--rule)}
-.l{font-family:var(--mono);font-size:.75rem;line-height:1.5;white-space:pre;
+.l{font-family:var(--mono);font-size:.8125rem;line-height:1.7;white-space:pre;
   min-width:max-content;padding-right:1rem;color:var(--ink-2)}
 .g{display:inline-block;width:3.4rem;padding-right:1rem;text-align:right;color:var(--ink-4);
   user-select:none;-webkit-user-select:none}
