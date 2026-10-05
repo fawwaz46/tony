@@ -408,7 +408,7 @@ function renderImpacts(ordered: ImpactFile[], windows: Record<string, Window>): 
           (imp) =>
             `<button class="jump ${cls(imp.kind)}" type="button" data-line="imp-${fileId(path)}-${num(imp.line, 1)}">line ${num(imp.line, 1)}</button>`,
         )
-        .join(" ");
+        .join("");
 
       let body: string;
       if (!win) {
@@ -450,7 +450,7 @@ function renderImpacts(ordered: ImpactFile[], windows: Record<string, Window>): 
     <span class="nb">${group.length}</span>
     <span class="cnt">not edited</span>
   </div>
-  <div class="jumps">${group.length} impact site${group.length === 1 ? "" : "s"}: ${sites}</div>
+  <div class="jumps"><span class="jl">${group.length} impact site${group.length === 1 ? "" : "s"}</span>${sites}</div>
   <div class="hunk full">${body}</div>
   ${FILE_NAV}
 </section>`;
@@ -1041,6 +1041,9 @@ function wire(root: HTMLElement): void {
     if (!box || !hit) return;
     section.querySelectorAll(".l.hit.focus").forEach((x) => x.classList.remove("focus"));
     hit.classList.add("focus");
+    section.querySelectorAll<HTMLElement>(".jump").forEach((j) =>
+      j.toggleAttribute("aria-current", j.dataset.line === hit.id),
+    );
     const top =
       box.scrollTop + hit.getBoundingClientRect().top - box.getBoundingClientRect().top -
       box.clientHeight / 3;

@@ -174,13 +174,20 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .file.impacted .st.breaks{color:var(--neg)}
 .file.impacted .st.behavior-change{color:var(--info)}
 .file.impacted .st.compatible{color:var(--ink-4)}
-.jumps{padding:.6rem .25rem;font-family:var(--mono);font-size:.68rem;color:var(--ink-4);
-  display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--rule)}
-.jump{color:var(--info);text-decoration:none;border:0;border-bottom:1px solid transparent;
-  background:none;font:inherit;padding:0;cursor:pointer}
-.jump:hover{border-bottom-color:currentColor}
-.jump.breaks{color:var(--neg)}
-.jump.compatible{color:var(--ink-3)}
+/* Each impact site is a chip, so "line 89" and "line 101" read as two things.
+   The one framed in the box below is filled. */
+.jumps{padding:.75rem .25rem;font-family:var(--mono);font-size:.68rem;color:var(--ink-4);
+  display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--rule)}
+.jumps .jl{margin-right:.35rem}
+.jump{color:var(--info);border:1px solid var(--info-line);background:none;font:inherit;
+  padding:.3em .65em;cursor:pointer;line-height:1}
+.jump:hover{border-color:currentColor}
+.jump[aria-current]{background:var(--info-bg);border-color:currentColor}
+.jump.breaks{color:var(--neg);border-color:color-mix(in srgb,var(--neg) 35%,transparent)}
+.jump.breaks[aria-current]{background:var(--neg-bg);border-color:currentColor}
+.jump.compatible{color:var(--ink-3);border-color:var(--rule-2)}
+.jump.compatible[aria-current]{background:var(--s2);border-color:currentColor}
+.jump:focus-visible{outline:1px solid var(--rule-3);outline-offset:2px}
 .hunk.full{max-height:34rem;overflow-y:auto}
 .l.hit{background:var(--s3)}
 .l.focus{background:var(--s3);box-shadow:inset 2px 0 0 var(--ink-3)}
