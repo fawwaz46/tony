@@ -216,6 +216,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .fnav button:hover:not(:disabled){border-color:var(--ink-3);color:var(--ink)}
 .fnav button:disabled{color:var(--rule-3);border-color:var(--rule);cursor:default}
 .fnav button:focus-visible{outline:1px solid var(--rule-3);outline-offset:2px}
+.fnavb{display:flex;border-top:1px solid var(--rule);padding-top:1rem;margin-top:2rem}
 .wth h3{margin:0 0 1.25rem;font-size:clamp(1.6rem,3.2vw,2.4rem);font-weight:700;
   letter-spacing:-.045em;line-height:1.02;color:var(--ink);max-width:22ch;text-wrap:balance}
 .wmeta{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;border-top:1px solid var(--rule);

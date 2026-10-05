@@ -558,16 +558,18 @@ function renderFlow(w: any, idx: number, total: number): string {
     : "";
 
   const reach = REACH_LABEL[w.reach] ?? "";
+  // Previous / next flow, in the eyebrow and again under the step panel: by
+  // the time someone has stepped to the end, the top has scrolled away.
+  const fnav =
+    total > 1
+      ? `<span class="fnav"><button class="fgo" data-to="${idx - 1}"${idx === 0 ? " disabled" : ""}>&#8249; Previous flow</button>` +
+        `<button class="fgo" data-to="${idx + 1}"${idx === total - 1 ? " disabled" : ""}>Next flow &#8250;</button></span>`
+      : "";
   return `
 <section class="wt" data-w="${idx}"${idx === 0 ? "" : " hidden"} style="--lanes:${actors.length}">
   <header class="wth">
     <div class="wtt">
-      <p class="cap">[ flow ${pad2(idx + 1)} / ${pad2(total)} ]<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span>${
-        total > 1
-          ? `<span class="fnav"><button class="fgo" data-to="${idx - 1}"${idx === 0 ? " disabled" : ""}>&#8249; Previous flow</button>` +
-            `<button class="fgo" data-to="${idx + 1}"${idx === total - 1 ? " disabled" : ""}>Next flow &#8250;</button></span>`
-          : ""
-      }</p>
+      <p class="cap">[ flow ${pad2(idx + 1)} / ${pad2(total)} ]<span class="fr ${cls(w.reach || "changed")}">${esc(reach)}</span>${fnav}</p>
       <h3>${esc(w.title || "Walkthrough")}</h3>
       <div class="wmeta">
         <p><span class="tl">Starts when</span>${esc(w.trigger)}</p>
@@ -587,6 +589,7 @@ function renderFlow(w: any, idx: number, total: number): string {
     <div class="rows">${rows}</div>
   </div></div>
   <div class="panels">${panels}</div>
+  ${fnav ? `<div class="fnavb">${fnav}</div>` : ""}
 </section>`;
 }
 
