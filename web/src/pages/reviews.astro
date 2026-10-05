@@ -13,6 +13,7 @@ export const prerender = false;
 
 let user = null;
 let rows: any[] = [];
+let tokens: any[] = [];
 try {
   user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
   if (user) {
@@ -23,6 +24,12 @@ try {
       WHERE user_id = ${user.id}
         AND created_at > now() - make_interval(days => ${RETENTION_DAYS}::int)
       ORDER BY created_at DESC LIMIT 200`;
+    // Every live token, so any of them can be revoked: one on a laptop, or one
+    // an approved agent holds in a sandbox somewhere.
+    tokens = await sql`
+      SELECT id, origin, label, created_at, last_used_at, expires_at
+      FROM tokens WHERE user_id = ${user.id} AND expires_at > now()
+      ORDER BY created_at DESC`;
   }
 } catch {
   user = null;
@@ -123,6 +130,52 @@ const expires = (d: string) => when(new Date(new Date(d).getTime() + RETENTION_D
       </section>
     )
   }
+
+  <section class="sec" style="border:0">
+    <p class="cap">[ logins · {tokens.length} ]</p>
+    <p class="rnote">
+      Each one can publish reviews to your account, nothing else. Revoke any you don't recognise.
+    </p>
+    {
+      tokens.length === 0 ? (
+        <p class="rnote">No CLI or agent is signed in.</p>
+      ) : (
+        <div class="rlist">
+          {tokens.map((t: any) => (
+            <div class="rrow" data-token={t.id}>
+              <span class="rmain">
+                <span class="rrepo">{t.origin === "link" ? (t.label || "Agent") : "CLI login"}</span>
+                <span class="rintent">
+                  {t.origin === "link" ? "approved" : "signed in"} {when(t.created_at)}
+                  {t.last_used_at ? `, last used ${when(t.last_used_at)}` : ", never used"}
+                  {`, expires ${when(t.expires_at)}`}
+                </span>
+              </span>
+              <span class="racts">
+                <button type="button" class="ract danger" data-revoke={t.id}>Revoke</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )
+    }
+    <script>
+      document.querySelectorAll<HTMLButtonElement>("[data-revoke]").forEach((b) => {
+        b.addEventListener("click", async () => {
+          b.disabled = true;
+          const resp = await fetch(`/api/tokens/${b.dataset.revoke}`, { method: "DELETE" });
+          const row = b.closest<HTMLElement>(".rrow");
+          if (resp.ok && row) {
+            row.classList.add("leaving");
+            setTimeout(() => row.remove(), 350);
+          } else {
+            b.disabled = false;
+            alert("That login could not be revoked. Try again.");
+          }
+        });
+      });
+    </script>
+  </section>
 
   <section class="sec" style="border:0">
     <p class="cap">[ account ]</p>

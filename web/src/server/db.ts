@@ -227,6 +227,24 @@ export async function migrate(): Promise<void> {
       user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TIMESTAMPTZ NOT NULL
     )`;
+  // What a token list needs: a handle to revoke by that is not the secret's
+  // hash, where the token came from, and when it was last used.
+  await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS id BIGINT GENERATED ALWAYS AS IDENTITY`;
+  await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT 'cli'`;
+  await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS label TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ`;
+  // A sandboxed agent asking to be approved. See server/link.ts.
+  await sql`
+    CREATE TABLE IF NOT EXISTS link_requests (
+      hash TEXT PRIMARY KEY,
+      poll_hash TEXT UNIQUE NOT NULL,
+      code TEXT NOT NULL,
+      agent TEXT NOT NULL DEFAULT '',
+      user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+      approved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL
+    )`;
   migrated = true;
 }
 
@@ -264,10 +282,13 @@ function asUser(row: Record<string, any>): User {
 export async function userForToken(header: string | null): Promise<User | null> {
   const token = header?.match(/^Bearer (.+)$/)?.[1];
   if (!token) return null;
+  // Checked and marked used in one statement, so the token list's "last used"
+  // costs no second round trip.
   const rows = await sql`
-    SELECT u.id, u.login, u.avatar_url, u.is_admin
-    FROM tokens t JOIN users u ON u.id = t.user_id
-    WHERE t.hash = ${await sha256Hex(token)} AND t.expires_at > now()`;
+    UPDATE tokens t SET last_used_at = now()
+    FROM users u
+    WHERE u.id = t.user_id AND t.hash = ${await sha256Hex(token)} AND t.expires_at > now()
+    RETURNING u.id, u.login, u.avatar_url, u.is_admin`;
   if (!rows.length) return null;
   return asUser(rows[0]);
 }
@@ -322,13 +343,23 @@ export async function createSession(userId: number): Promise<string> {
   return id;
 }
 
-/** The CLI's credential. Same shape as a session, same window. */
-export async function createToken(userId: number): Promise<string> {
+/**
+ * The CLI's credential. Same shape as a session, same window.
+ *
+ * A token can only publish: reading and deleting reviews take a browser
+ * session. The CLI never does either, and a token is the credential most
+ * likely to end up somewhere its owner did not mean it to — a sandbox, a
+ * stranger's approval link — so it carries the least it needs.
+ *
+ * `origin` is how it was issued ("cli" for `tony login`, "link" for an
+ * approved agent link) and `label` says what asked for it, for the token list.
+ */
+export async function createToken(userId: number, origin = "cli", label = ""): Promise<string> {
   const token = randomToken();
   await sql`
-    INSERT INTO tokens (hash, user_id, expires_at)
+    INSERT INTO tokens (hash, user_id, expires_at, origin, label)
     VALUES (${await sha256Hex(token)}, ${userId},
-            now() + make_interval(days => ${CREDENTIAL_DAYS}::int))`;
+            now() + make_interval(days => ${CREDENTIAL_DAYS}::int), ${origin}, ${label})`;
   return token;
 }
 

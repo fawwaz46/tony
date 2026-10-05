@@ -2,10 +2,10 @@
  * Delete the signed-in account and everything in it.
  *
  * Browser session only. A CLI token is a credential that sits in a file on a
- * laptop for thirty days; it can publish and read, and that is enough for it
- * to do. Ending an account should take someone at the site, signed in, who
- * clicked the button — and the CSRF check in middleware makes sure the click
- * came from this site.
+ * laptop for thirty days; it can publish, and that is all it can do. Ending
+ * an account should take someone at the site, signed in, who clicked the
+ * button — and the CSRF check in middleware makes sure the click came from
+ * this site.
  */
 import type { APIRoute } from "astro";
 import { SESSION_COOKIE, fail, migrate, userForSession, withDatabase } from "../../server/db";

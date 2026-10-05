@@ -14,6 +14,11 @@
  *
  * DELETE is owner-only. Reviews older than the retention window read as not
  * found — see server/retention.ts.
+ *
+ * Both take a browser session and nothing else. A CLI token can only publish
+ * (see createToken in server/db.ts): the CLI never reads or deletes, and a
+ * token is the credential most likely to leak, so it must not open anyone's
+ * reviews.
  */
 import type { APIRoute } from "astro";
 import { del, get } from "@vercel/blob";
@@ -22,8 +27,7 @@ import { open } from "../../../server/crypto";
 import { blobToken } from "../../../server/env";
 import { RETENTION_DAYS } from "../../../server/retention";
 import {
-  SESSION_COOKIE, fail, migrate, sql, throttle, userForSession, userForToken,
-  withDatabase,
+  SESSION_COOKIE, fail, migrate, sql, throttle, userForSession, withDatabase,
 } from "../../../server/db";
 
 export const prerender = false;
@@ -38,23 +42,18 @@ const HOUR = 60 * 60 * 1000;
 // Matches the ceiling the upload route inflates against.
 const MAX_PAYLOAD_BYTES = 10_000_000;
 
-/** Either identity works: a browser session, or the CLI's bearer token. */
-async function reader(request: Request, cookies: any) {
-  return (
-    (await userForSession(cookies.get(SESSION_COOKIE)?.value)) ??
-    (await userForToken(request.headers.get("Authorization")))
-  );
+/** The browser's session. A bearer token is not accepted here. */
+async function reader(cookies: any) {
+  return userForSession(cookies.get(SESSION_COOKIE)?.value);
 }
 
 export const GET: APIRoute = async ({ params, request, cookies }) => {
-  // No credential at all is answerable without a query.
-  if (!cookies.get(SESSION_COOKIE)?.value && !request.headers.get("Authorization")) {
-    return fail(401, "login required");
-  }
+  // No session at all is answerable without a query.
+  if (!cookies.get(SESSION_COOKIE)?.value) return fail(401, "login required");
 
   return withDatabase(async () => {
     await migrate();
-    const user = await reader(request, cookies);
+    const user = await reader(cookies);
     if (!user) return fail(401, "login required");
 
     // Counted before the row is looked up, so a miss costs an attacker the
@@ -90,13 +89,11 @@ export const GET: APIRoute = async ({ params, request, cookies }) => {
 };
 
 export const DELETE: APIRoute = async ({ params, request, cookies }) => {
-  if (!cookies.get(SESSION_COOKIE)?.value && !request.headers.get("Authorization")) {
-    return fail(401, "login required");
-  }
+  if (!cookies.get(SESSION_COOKIE)?.value) return fail(401, "login required");
 
   return withDatabase(async () => {
     await migrate();
-    const user = await reader(request, cookies);
+    const user = await reader(cookies);
     if (!user) return fail(401, "login required");
 
     const rows = await sql`

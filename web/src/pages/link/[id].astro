@@ -1,0 +1,105 @@
+---
+/**
+ * Where a person approves their sandboxed agent. See server/link.ts.
+ *
+ * Showing this page changes nothing: chat apps fetch links to draw previews,
+ * so approval is only ever the button's POST. The page shows the six-character
+ * code so the person can match it against what their agent said, and whose
+ * account the agent will publish to, so nobody approves for the wrong one.
+ */
+import Shell from "../../layouts/Shell.astro";
+import { SESSION_COOKIE, migrate, userForSession } from "../../server/db";
+import { linkRequest } from "../../server/link";
+
+export const prerender = false;
+
+// A link id is a secret for ten minutes: keep this page out of caches and
+// search results.
+Astro.response.headers.set("Cache-Control", "no-store");
+Astro.response.headers.set("X-Robots-Tag", "noindex");
+
+const id = Astro.params.id ?? "";
+const valid = /^[a-f0-9]{64}$/.test(id);
+
+let user = null;
+let request = null;
+try {
+  await migrate();
+  user = await userForSession(Astro.cookies.get(SESSION_COOKIE)?.value);
+  request = valid ? await linkRequest(id) : null;
+} catch {
+  request = null;
+}
+
+const here = `/link/${id}`;
+const agent = request?.agent || "Your agent";
+const mine = Boolean(request && user && request.approvedBy === user.id);
+const state = !request
+  ? "expired"
+  : request.approvedBy !== null
+    ? mine ? "done" : "taken"
+    : !user ? "signin" : "approve";
+---
+
+<Shell title="Approve your agent · tony" description="Let an agent publish tony reviews.">
+  <div class="auth link">
+    {
+      state === "expired" && (
+        <>
+          <p class="cap">Approve your agent</p>
+          <h1>This link has expired.</h1>
+          <p class="sub">Ask your agent for a new one.</p>
+        </>
+      )
+    }
+    {
+      state === "taken" && (
+        <>
+          <p class="cap">Approve your agent</p>
+          <h1>This was already approved.</h1>
+          <p class="sub">Go back to your agent.</p>
+        </>
+      )
+    }
+    {
+      state === "done" && (
+        <>
+          <p class="cap">Approved for {user!.login}</p>
+          <h1>You're all set.</h1>
+          <p class="sub">Go back to your agent and tell it you've approved. You can close this tab.</p>
+        </>
+      )
+    }
+    {
+      state === "signin" && (
+        <>
+          <p class="cap">Approve your agent</p>
+          <h1>Sign in to approve.</h1>
+          <p class="sub">{agent} wants to publish tony reviews to your account.</p>
+          <a class="btn" href={`/login?next=${encodeURIComponent(here)}`}>Sign in</a>
+        </>
+      )
+    }
+    {
+      state === "approve" && (
+        <>
+          <p class="cap">Approve your agent</p>
+          <h1>Does your agent show this code?</h1>
+          <p class="lcode">{request!.code}</p>
+          <p class="sub">
+            {agent} wants to publish tony reviews to <b>{user!.login}</b>. Only approve if
+            the code matches. It can publish reviews, nothing else.
+          </p>
+          <form method="POST" action="/api/link/approve" class="cta-row">
+            <input type="hidden" name="id" value={id} />
+            <button class="btn" type="submit">Approve</button>
+          </form>
+          <form method="POST" action="/api/auth/signout" class="lswitch">
+            <input type="hidden" name="next" value={here} />
+            <button class="linkish" type="submit">Not {user!.login}? Use a different account</button>
+          </form>
+        </>
+      )
+    }
+  </div>
+</Shell>

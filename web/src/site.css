@@ -304,3 +304,12 @@
 .whoami .where code { font-family: var(--mono); font-size: .75rem; color: var(--ink-2);
   background: var(--s2); border: 1px solid var(--rule); border-radius: 3px;
   padding: .35rem .5rem; display: block; overflow-wrap: anywhere; }
+
+/* ---- approving an agent ---- */
+.link .lcode { font: 500 clamp(2rem, 6vw, 2.75rem)/1 var(--mono); letter-spacing: .28em;
+  color: var(--ink); margin: .25rem 0 1.5rem; }
+.link .sub b { color: var(--ink); font-weight: 500; }
+.link .lswitch { margin-top: 1.75rem; }
+.link .linkish { background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
+  font-size: .8rem; color: var(--ink-4); text-decoration: underline; text-underline-offset: 2px; }
+.link .linkish:hover { color: var(--ink); }
