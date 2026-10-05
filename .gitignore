@@ -23,3 +23,6 @@ build/
 
 # The dev virtualenv resolver writes this; CI installs with pip, so nothing reads it.
 uv.lock
+
+# The dev viewer's hand-written payload: a review of whatever repo you ran in.
+web/src/fixtures/local.json

@@ -19,7 +19,9 @@ const load = (name: string) => {
     return null;
   }
 };
-const payload = load("review.json") ?? "{}";
+// `?p=local` shows the hand-written one; the default is the curated demo.
+const local = Astro.url.searchParams.get("p") === "local";
+const payload = (local ? load("local.json") : null) ?? load("review.json") ?? "{}";
 // JSON.stringify does not escape `<`, so a payload containing the literal
 // `</script>` — ordinary enough in a repo that emits HTML — would end this
 // block early and the rest would parse as markup.
