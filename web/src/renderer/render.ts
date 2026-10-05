@@ -506,8 +506,7 @@ function renderFlowIndex(walkthroughs: any[]): string {
     .join("");
   return (
     `<div class="flows-head"><p class="cap">[ flows · ${walkthroughs.length} ]</p>` +
-    `<p class="fhint">Each flow follows one real scenario, one step at a time. ` +
-    `Guess what happens before you press next.</p></div>` +
+    `<p class="fhint">Each flow follows one real scenario, one step at a time.</p></div>` +
     `<div class="findex"><span class="fimark" aria-hidden="true"></span>${rows}</div>`
   );
 }
