@@ -182,7 +182,7 @@ mono eyebrow in accent; the kind tag and line range follow in `--ink-4`. Multi-p
 (Prev / New / Changes) only when the model supplied more than one pane; a plain insertion gets
 flat prose and no tabs.
 
-**Flow** (the How it works tab) — Swiss, more than anywhere else on the page: a 2px `--ink`
+**Flow** (the How it works tab) — Swiss, more than anywhere else on the page: a 1px `--ink`
 rule where each flow starts, the title under its `[ FLOW 01 / 02 ]` eyebrow, and *Starts when* / *What changed* as two flush-left columns under a hairline. With
 more than one flow, an index table sits above: `[01]` · title · reach · a strip of one square
 per step coloured by phase · step count.

@@ -184,7 +184,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .flows-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:2rem;
   align-items:baseline;margin-bottom:.4rem}
 .fhint{margin:0 0 .8rem;font-size:.85rem;color:var(--ink-3);max-width:60ch}
-.findex{border-top:2px solid var(--ink);margin-bottom:3.5rem}
+.findex{border-top:1px solid var(--ink);margin-bottom:3.5rem}
 .fi{display:grid;grid-template-columns:3.5rem minmax(0,1fr) 10rem 9rem 4.5rem;gap:1rem;
   align-items:center;width:100%;background:none;border:0;border-bottom:1px solid var(--rule);
   padding:.9rem 0;color:var(--ink-3);text-align:left;cursor:pointer;font:inherit}
@@ -214,7 +214,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
   .fi .strip,.fi .fn{display:none}
 }
 
-.wt{border-top:2px solid var(--ink);padding:1.5rem 0 3rem}
+.wt{border-top:1px solid var(--ink);padding:1.5rem 0 3rem}
 .wt[hidden]{display:none}
 .wt.enter{animation:flow-enter .35s cubic-bezier(.2,.7,.2,1)}
 @keyframes flow-enter{from{opacity:0;transform:translateY(.5rem)}}
