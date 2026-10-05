@@ -293,21 +293,23 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .srow.removed .arrow{background:none;border-top:1px dashed currentColor;height:0}
 .srow.removed .arrow::after{top:-4px}
 .srow[aria-current] .arrow{height:2px;top:calc(1.15rem - .5px)}
-/* A step's label sits under its arrow, on the row's own surface so the
-   lifelines it crosses stop at the text rather than running through it. It
-   is in the row's flow, not over it: a long label wraps and the row grows,
-   because a step you cannot read all of is a step that is not there. A step
-   that stays in a lane right of centre hangs its label leftward instead, or
-   it would get half a lane to say anything in. */
+/* A step's label sits under its arrow, between the two lifelines that arrow
+   joins, and never past the far one: text running over a lane it has nothing
+   to do with reads as belonging to it. A step that stays in its lane takes
+   the gap to its right-hand neighbour, or, right of centre, hangs leftward to
+   the one on its left. It is in the row's flow, not over it: a long label
+   wraps and the row grows, because a step you cannot read all of is a step
+   that is not there. The box starts just over its own lifeline, so that line
+   stops at the text, and ends a little short of the far one. */
 .track{padding:1.85rem 0 .7rem}
 .slab{position:relative;display:block;width:fit-content;
   margin-left:calc((var(--from) + .5) * 100% / var(--lanes) - .35rem);
-  max-width:calc((var(--lanes) - var(--from) - .5) * 100% / var(--lanes) + .35rem);
+  max-width:calc(var(--gap) * 100% / var(--lanes) + .1rem);
   font-size:.72rem;line-height:1.4;color:var(--ink-4);white-space:normal;
   padding:0 .35rem;background:var(--row-bg);text-wrap:pretty}
 .srow.rt .slab{margin-left:auto;text-align:right;
   margin-right:calc((var(--lanes) - var(--a) - .5) * 100% / var(--lanes) - .35rem);
-  max-width:calc((var(--a) + .5) * 100% / var(--lanes) + .35rem)}
+  max-width:calc(var(--gap) * 100% / var(--lanes) + .1rem)}
 .srow[aria-current] .slab{color:var(--ink-2)}
 .srow.future .slab{color:var(--rule-3)}
 .srow.draw .arrow{animation:flow-draw .55s cubic-bezier(.2,.7,.2,1)}

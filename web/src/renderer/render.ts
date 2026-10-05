@@ -636,6 +636,11 @@ function initFlows(root: HTMLElement): void {
         r.classList.toggle("left", from > to);
         r.classList.toggle("self", from === to);
         r.classList.toggle("rt", from === to && to > (lanes - 1) / 2);
+        // The lifelines the label sits between: an arrow's own two, or for a
+        // step that stays put, its lane and the neighbour it hangs toward.
+        // A lone lane has no neighbour and runs to the edge.
+        const gap = from !== to ? Math.abs(to - from) : lanes === 1 ? 0.5 : 1;
+        r.style.setProperty("--gap", String(gap));
       });
     };
 
