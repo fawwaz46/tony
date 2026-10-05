@@ -45,12 +45,12 @@ else
 fi
 
 echo
-echo "tony: installed. Two commands and you are set up:"
+echo "tony: installed. One command and you are set up:"
 echo
 echo "    tony connect                   # register tony with your coding agent"
-echo "    tony login                     # sign in, so reviews have somewhere to go"
 echo
-echo "Then ask your agent: \"review this branch with tony\"."
+echo "Restart your agent, then ask it: \"review this branch with tony\"."
+echo "The first time, it shows you a link to approve."
 
 # Both installers put commands in a directory that is often not on PATH, and
 # they only say so on the install that creates it. Telling someone to open a

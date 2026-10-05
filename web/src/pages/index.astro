@@ -81,6 +81,95 @@ const error = Astro.url.searchParams.get("error");
   </section>
 
   <section class="sec">
+    <p class="cap">[ how to use it ]</p>
+    <h2 class="big">Set it up once. Then just ask.</h2>
+    <p class="body">
+      tony doesn't call a model. Your coding agent writes the review, and tony turns it
+      into a page you can share. No API key.
+    </p>
+    <div class="uses">
+      <nav class="tabs-main" role="tablist">
+        <span class="tabmark" aria-hidden="true"></span>
+        <button class="mt" role="tab" data-use="local" aria-selected="true">Local agents</button>
+        <button class="mt" role="tab" data-use="sandboxed" aria-selected="false">Sandboxed agents</button>
+      </nav>
+      <div class="usepane" data-use="local">
+        <p class="body">Claude Code, Codex, Cursor or Amp, running on your computer.</p>
+        <div class="three">
+          <div>
+            <span class="n">[01]</span>
+            <h3>Install</h3>
+            <p style="margin-bottom:.75rem">Paste this to your agent, or run it yourself.</p>
+            <div class="cmd prompt"><code><span class="p">&gt; </span>install tony with curl -fsSL https://tony-cli.com/install.sh | sh, then run tony connect</code></div>
+          </div>
+          <div>
+            <span class="n">[02]</span>
+            <h3>Restart</h3>
+            <p>Restart your agent so it picks tony up.</p>
+          </div>
+          <div>
+            <span class="n">[03]</span>
+            <h3>Ask</h3>
+            <p style="margin-bottom:.75rem">The first time, approve the link it shows you.</p>
+            <div class="cmd"><code><span class="p">&gt; </span>review this branch with tony</code></div>
+          </div>
+        </div>
+      </div>
+      <div class="usepane" data-use="sandboxed" hidden>
+        <p class="body">Codex cloud, Claude Code on the web, Amp, Cursor background agents.</p>
+        <div class="three">
+          <div>
+            <span class="n">[01]</span>
+            <h3>Setup script</h3>
+            <p style="margin-bottom:.75rem">Add this to your environment's setup script.</p>
+            <div class="cmd"><code><span class="p">$ </span>pip install tony-cli &amp;&amp; tony connect</code></div>
+          </div>
+          <div>
+            <span class="n">[02]</span>
+            <h3>Allow tony</h3>
+            <p>If the sandbox limits internet access, allow <b>tony-cli.com</b>.</p>
+          </div>
+          <div>
+            <span class="n">[03]</span>
+            <h3>Ask</h3>
+            <p style="margin-bottom:.75rem">Approve the link it shows you. That sandbox stays signed in.</p>
+            <div class="cmd"><code><span class="p">&gt; </span>review this branch with tony</code></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Two ways in, one tab bar: the selected tab is underlined by a mark
+      // that slides between them, the same as on a review.
+      const uses = document.querySelector<HTMLElement>(".uses");
+      if (uses) {
+        const bar = uses.querySelector<HTMLElement>(".tabs-main")!;
+        const mark = uses.querySelector<HTMLElement>(".tabmark")!;
+        const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const place = (animate: boolean) => {
+          const tab = uses.querySelector<HTMLElement>('.mt[aria-selected="true"]');
+          if (!tab || !bar.offsetWidth) return;
+          mark.classList.toggle("slide", animate && !calm);
+          mark.style.transform = `translateX(${tab.offsetLeft}px)`;
+          mark.style.width = `${tab.offsetWidth}px`;
+        };
+        uses.querySelectorAll<HTMLElement>(".mt").forEach((tab) =>
+          tab.addEventListener("click", () => {
+            uses.querySelectorAll(".mt").forEach((t) =>
+              t.setAttribute("aria-selected", String(t === tab)),
+            );
+            uses.querySelectorAll<HTMLElement>(".usepane").forEach((p) => {
+              p.hidden = p.dataset.use !== tab.dataset.use;
+            });
+            place(true);
+          }),
+        );
+        new ResizeObserver(() => place(false)).observe(bar);
+      }
+    </script>
+  </section>
+
+  <section class="sec">
     <p class="cap">[ example ]</p>
     <h2 class="big">Check it out.</h2>
     <p class="body">A real review of a small payments change. Click around.</p>
@@ -94,37 +183,6 @@ const error = Astro.url.searchParams.get("error");
     </div>
   </section>
 
-  <section class="sec">
-    <p class="cap">[ using it ]</p>
-    <h2 class="big">Set it up once. Then just ask.</h2>
-    <p class="body">
-      tony doesn't call a model. Your coding agent writes the review, and tony turns it
-      into a page you can share. No API key.
-    </p>
-    <div class="three">
-      <div>
-        <span class="n">[01]</span>
-        <h3>Install</h3>
-        <div class="cmd">
-          <code><span class="p">$ </span>curl -fsSL https://tony-cli.com/install.sh | sh</code>
-        </div>
-      </div>
-      <div>
-        <span class="n">[02]</span>
-        <h3>Connect and sign in</h3>
-        <p style="margin-bottom:.75rem">
-          Works with Claude Code, Cursor, Amp and Codex. <b>Restart your agent after.</b>
-        </p>
-        <div class="cmd"><code><span class="p">$ </span>tony connect &amp;&amp; tony login</code></div>
-      </div>
-      <div>
-        <span class="n">[03]</span>
-        <h3>Ask</h3>
-        <p style="margin-bottom:.75rem">Ask your agent. You get a link back.</p>
-        <div class="cmd"><code><span class="p">&gt; </span>review this branch with tony</code></div>
-      </div>
-    </div>
-  </section>
 
   <section class="sec">
     <p class="cap">[ commands ]</p>

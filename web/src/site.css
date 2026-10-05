@@ -313,3 +313,12 @@
 .link .linkish { background: none; border: 0; padding: 0; cursor: pointer; font: inherit;
   font-size: .8rem; color: var(--ink-4); text-decoration: underline; text-underline-offset: 2px; }
 .link .linkish:hover { color: var(--ink); }
+
+/* ---- how to use it: local and sandboxed agents ---- */
+.uses { margin-top: 1.5rem; }
+.uses .tabs-main { margin-bottom: 1.25rem; }
+.uses .usepane > .body { margin: 0 0 1rem; font-size: .85rem; }
+/* A prompt is a sentence, not a command: it wraps at word breaks and stays
+   whole, rather than scrolling out of a narrow column. */
+.cmd.prompt code { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
+.uses .three p b { white-space: nowrap; }

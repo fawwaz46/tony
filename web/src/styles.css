@@ -33,7 +33,7 @@
 /* Each of these is shown by removing `hidden` or opening a <details>, and a
    CSS animation replays whenever an element starts being rendered, so every
    switch eases in with no script. */
-#pane-files,#pane-blast,#pane-walk,.file:not(details),.wt,.pane,.ann.risk,
+#pane-files,#pane-blast,#pane-walk,.file:not(details),.wt,.pane,.ann.risk,.usepane,
 details[open] > :not(summary),.entering{animation:enter var(--t-enter) var(--ease)}
 /* Page sections below the first screen, revealed as they scroll in. The class
    is added by script, so without it everything is simply there. */
