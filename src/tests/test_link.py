@@ -190,6 +190,24 @@ def test_a_site_that_cannot_be_reached_points_at_tony_login(tmp_path, monkeypatc
     ready(monkeypatch)
     out = startReview(str(makeRepo(tmp_path)), range="main...feature")
     assert "tony login" in out and "--- THE DIFF ---" not in out
+    # Cloud sandboxes block the internet by default; the agent is told so.
+    assert "limits internet access" in out and "allow\n  site.test" in out
+
+
+def test_a_site_that_refuses_gets_no_network_hint(tmp_path, monkeypatch):
+    """A site that answered is not a blocked network; don't send the user to settings."""
+    monkeypatch.setattr(hosted.httpx, "post",
+                        lambda *a, **k: FakeResponse({"error": "too many"}, 429))
+    ready(monkeypatch)
+    out = startReview(str(makeRepo(tmp_path)), range="main...feature")
+    assert "too many" in out and "limits internet access" not in out
+
+
+def test_connect_no_longer_sends_people_to_tony_login(capsys):
+    from tony_cli.mcp_config import nextSteps
+    nextSteps(False)
+    out = capsys.readouterr().out
+    assert "link to approve" in out and "Sign in, so reviews" not in out
 
 
 def test_a_signed_in_machine_names_its_account(tmp_path, monkeypatch):

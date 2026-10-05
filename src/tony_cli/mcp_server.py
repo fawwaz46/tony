@@ -19,6 +19,7 @@ import os
 import secrets
 import threading
 import time
+from urllib.parse import urlparse
 
 # The SDK renamed FastMCP to MCPServer in 2.0. The class is the same shape —
 # same constructor, same `.tool` decorator, same `.run(transport=...)` — so
@@ -63,6 +64,22 @@ PARTS_LOCK = threading.Lock()
 # annotations written after that are written from a summary of the code.
 PART_CHARS = 150_000
 
+def blockedHint(problem):
+    """What to add when the site could not be reached at all.
+
+    Cloud sandboxes (Codex cloud, for one) cut the agent off from the internet
+    by default, and an agent that only hears "could not reach" may not think
+    of that. A refusal from the site is a different problem and gets nothing.
+    """
+    if not str(problem).startswith("could not reach"):
+        return ""
+    return (
+        f"\n  If this is a sandbox that limits internet access, ask the user to allow\n"
+        f"  {urlparse(hosted.apiBase()).hostname or 'tony-cli.com'} in its network settings, "
+        "then try again."
+    )
+
+
 def approvalNeeded(link, again=False):
     """What the agent is told when this machine has no token yet."""
     lead = (
@@ -98,13 +115,14 @@ def signIn(harness):
         if status == "pending":
             return approvalNeeded(hosted.pendingLink(), again=True), ""
         if status == "error":
-            return f"tony: could not check the approval link: {detail}\n  Try tony_start again.", ""
+            return (f"tony: could not check the approval link: {detail}{blockedHint(detail)}\n"
+                    "  Try tony_start again."), ""
         # Expired or already spent: start a fresh one below.
     link, problem = hosted.startLink(agent=(harness[0] if harness else "") or "")
     if problem:
         return (
-            f"tony: this machine is not signed in, and {problem}\n"
-            "  Ask the user to run `tony login`, or try tony_start again.", ""
+            f"tony: this machine is not signed in, and {problem}{blockedHint(problem)}\n"
+            "  Otherwise ask the user to run `tony login`, or try tony_start again.", ""
         )
     return approvalNeeded(link), ""
 
@@ -200,7 +218,7 @@ def startReview(path=None, range=None, harness=("", ""), sessionId=None, part=No
     served, problem = hosted.fetchInstructions()
     if problem:
         return (
-            f"tony: could not fetch the review instructions — {problem}\n"
+            f"tony: could not fetch the review instructions — {problem}{blockedHint(problem)}\n"
             "  Nothing was started. Try again when the network is back."
         )
 
@@ -509,7 +527,7 @@ def publishPage(session, review, model, incomplete=""):
     )
     if problem:
         return (
-            f"tony: the review passed validation but could not be published — {problem}\n"
+            f"tony: the review passed validation but could not be published — {problem}{blockedHint(problem)}\n"
             "  Nothing is lost: call tony_publish again with the same sessionId."
         )
     return (

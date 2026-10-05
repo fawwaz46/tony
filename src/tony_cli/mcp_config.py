@@ -171,20 +171,17 @@ def connect(argv=None):
 
 
 def nextSteps(signedIn):
-    """The two things that are not files, and are not optional."""
+    """What is left after the files: a restart, and the first review."""
     print("\n  Next\n")
     print("    1.  Restart your agent.")
     print("        It reads its list of tools once, when it starts — until then")
     print("        it has never heard of tony.\n")
 
+    print("    2.  Ask it to review something:\n")
+    print("            review this branch with tony\n")
     if signedIn:
-        print("    2.  Ask it to review something:\n")
-        print("            review this branch with tony\n")
         print("        This machine is already signed in.")
     else:
-        print("    2.  Sign in, so reviews have somewhere to go:\n")
-        print("            tony login\n")
-        print("        It opens a browser and tells you when the terminal is ready.")
-        print("        Then ask your agent:\n")
-        print("            review this branch with tony")
+        print("        The first time, it shows you a link to approve, so reviews")
+        print("        have somewhere to go. (Or sign in now with `tony login`.)")
     print(f"\n  Docs: {hosted.apiBase()}/docs\n")
