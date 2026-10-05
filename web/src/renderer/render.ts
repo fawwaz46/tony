@@ -503,7 +503,7 @@ function renderFlowIndex(walkthroughs: any[]): string {
     `<div class="flows-head"><p class="cap">[ flows · ${walkthroughs.length} ]</p>` +
     `<p class="fhint">Each flow follows one real scenario, one step at a time. ` +
     `Guess what happens before you press next.</p></div>` +
-    `<div class="findex">${rows}</div>`
+    `<div class="findex"><span class="fimark" aria-hidden="true"></span>${rows}</div>`
   );
 }
 
@@ -723,9 +723,28 @@ function initFlows(root: HTMLElement): void {
 
   // One flow on screen at a time, chosen from the index or stepped to from
   // the flow itself — the index has usually scrolled out of sight by then.
+  // The index marks the selected flow with one bar that slides between rows,
+  // rather than one per row that blinks. Placed from the row's own box, so it
+  // is re-placed whenever the index changes size: rows that wrap on a phone,
+  // and the tab going from hidden (no size at all) to shown.
+  const index = root.querySelector<HTMLElement>(".findex");
+  const mark = root.querySelector<HTMLElement>(".fimark");
+  const place = (animate: boolean) => {
+    const row = root.querySelector<HTMLElement>(".fi[aria-current]");
+    if (!index || !mark || !row || !index.offsetHeight) return;
+    const inset = Math.min(11, row.offsetHeight / 4);
+    mark.classList.toggle("slide", animate && !still);
+    mark.style.transform = `translateY(${row.offsetTop + inset}px)`;
+    mark.style.height = `${row.offsetHeight - inset * 2}px`;
+  };
+  if (index && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => place(false)).observe(index);
+  }
+
   const showFlow = (w: string, scroll: boolean) => {
     const target = players.find((p) => p.wt.dataset.w === w);
     if (!target) return;
+    const was = target.wt.hidden;
     players.forEach((p) => {
       p.stop();
       p.wt.hidden = p !== target;
@@ -733,7 +752,14 @@ function initFlows(root: HTMLElement): void {
     root.querySelectorAll<HTMLElement>(".fi").forEach((x) =>
       x.toggleAttribute("aria-current", x.dataset.w === w),
     );
-    if (scroll) target.wt.scrollIntoView?.({ block: "start" });
+    place(true);
+    // The flow that comes in eases in, so a switch reads as a switch.
+    if (was && !still) {
+      target.wt.classList.remove("enter");
+      void target.wt.offsetWidth; // restart the animation
+      target.wt.classList.add("enter");
+    }
+    if (scroll) target.wt.scrollIntoView?.({ block: "start", behavior: still ? "auto" : "smooth" });
   };
   root.querySelectorAll<HTMLElement>(".fi").forEach((b) => {
     b.onclick = () => showFlow(b.dataset.w!, false);
