@@ -201,6 +201,7 @@ function renderFiles(files: any[], annotations: any[], risks: any[], skips: any[
     <span class="cnt"><b class="${num(f.additions) ? "pos" : "z"}">+${num(f.additions)}</b> <b class="${num(f.deletions) ? "neg" : "z"}">&minus;${num(f.deletions)}</b></span>
   </div>
   ${inner}
+  ${FILE_NAV}
 </section>`;
     })
     .join("");
@@ -281,7 +282,10 @@ export function buildTree(files: any[]): TreeNode[] {
   return sort(root.children.map(collapse));
 }
 
-function renderTreeNodes(nodes: TreeNode[]): string {
+/** One leaf row: the button the tree shows for a file. */
+type Leaf = (node: TreeNode) => string;
+
+function renderTreeNodes(nodes: TreeNode[], leaf: Leaf): string {
   return nodes
     .map((node) => {
       if (node.dir) {
@@ -290,40 +294,64 @@ function renderTreeNodes(nodes: TreeNode[]): string {
   <button class="tdh" type="button" aria-expanded="true">
     <span class="tw" aria-hidden="true"></span><span class="tnm">${esc(node.name)}</span>
   </button>
-  <ul class="tsub">${renderTreeNodes(node.children)}</ul>
+  <ul class="tsub">${renderTreeNodes(node.children, leaf)}</ul>
 </li>`;
       }
-      const f = node.file ?? {};
-      const status = String(f.status ?? "");
-      const mark = STATUS_MARK[status] ?? "\u00b1";
       // The full path drives filtering, so typing "src/renderer" finds a file
       // whose own name never contains it.
-      const search = esc(String(f.path ?? "").toLowerCase());
+      const search = esc(String(node.file?.path ?? "").toLowerCase());
       return `
-<li class="tfl" data-search="${search}">
+<li class="tfl" data-search="${search}">${leaf(node)}</li>`;
+    })
+    .join("");
+}
+
+/** A changed file: its status, its name, unexplained lines, and +/- counts. */
+const fileLeaf: Leaf = (node) => {
+  const f = node.file ?? {};
+  const status = String(f.status ?? "");
+  const mark = STATUS_MARK[status] ?? "\u00b1";
+  return `
   <button class="tfb" type="button" data-target="file-${fileId(String(f.path ?? ""))}"${node.index === 1 ? " aria-current" : ""}>
     <span class="ti ${cls(status)}" aria-hidden="true">${mark}</span>
     <span class="tnm">${esc(node.name)}</span>
     ${num(f.unexplainedLines) ? `<span class="tg" title="${num(f.unexplainedLines)} lines unexplained">\u25cf</span>` : ""}
     <span class="tct"><b class="${num(f.additions) ? "pos" : "z"}">+${num(f.additions)}</b> <b class="${num(f.deletions) ? "neg" : "z"}">&minus;${num(f.deletions)}</b></span>
-  </button>
-</li>`;
-    })
-    .join("");
-}
+  </button>`;
+};
 
-function renderTree(files: any[]): string {
+const KIND_MARK: Record<string, string> = { breaks: "!", "behavior-change": "~", compatible: "=" };
+
+/** An impacted file: how badly it is reached, its name, and how many sites. */
+const impactLeaf: Leaf = (node) => {
+  const f = node.file ?? {};
+  const kind = String(f.worst ?? "");
+  const n = num(f.sites);
+  return `
+  <button class="tfb" type="button" data-target="impact-${fileId(String(f.path ?? ""))}"${node.index === 1 ? " aria-current" : ""}>
+    <span class="ti ${cls(kind)}" aria-hidden="true" title="${esc(KIND_LABEL[kind] ?? kind)}">${KIND_MARK[kind] ?? "\u00b7"}</span>
+    <span class="tnm">${esc(node.name)}</span>
+    <span class="tct">${n} site${n === 1 ? "" : "s"}</span>
+  </button>`;
+};
+
+function renderTree(files: any[], leaf: Leaf, label: string, filterId: string): string {
   const nodes = buildTree(files);
   if (nodes.length === 0) return "";
   return `
-<aside class="tree" aria-label="Changed files">
+<aside class="tree" aria-label="${label}">
   <div class="tfil">
-    <input type="search" id="treeFilter" placeholder="Filter files\u2026" aria-label="Filter files" autocomplete="off">
+    <input type="search" class="tfilter" id="${filterId}" placeholder="Filter files\u2026" aria-label="Filter files" autocomplete="off">
   </div>
-  <ul class="tn">${renderTreeNodes(nodes)}</ul>
+  <ul class="tn">${renderTreeNodes(nodes, leaf)}</ul>
   <p class="tnone" hidden>No files match.</p>
 </aside>`;
 }
+
+/** Previous / next file, under the file, for whoever has read to the end of it. */
+const FILE_NAV =
+  `<div class="fnavb"><span class="fnav"><button class="tgo" data-d="-1">&#8249; Previous file</button>` +
+  `<button class="tgo" data-d="1">Next file &#8250;</button></span></div>`;
 
 // ---- blast radius ---------------------------------------------------------
 
@@ -339,7 +367,10 @@ function renderImpactNote(imp: any): string {
   );
 }
 
-function renderImpacts(impacts: any[], windows: Record<string, Window>): string {
+type ImpactFile = { path: string; group: any[]; worst: string; sites: number };
+
+/** Impacts grouped by the file they are in, worst file first. */
+function impactFiles(impacts: any[]): ImpactFile[] {
   const byPath = new Map<string, any[]>();
   for (const imp of impacts) {
     if (!imp.path) continue;
@@ -349,12 +380,20 @@ function renderImpacts(impacts: any[], windows: Record<string, Window>): string 
   const worstOf = (group: any[]) => Math.min(...group.map((i) => KIND_ORDER[i.kind] ?? 1));
 
   // Worst first: a reader who opens one file should open the one that breaks.
-  const ordered = [...byPath.entries()].sort((a, b) => worstOf(a[1]) - worstOf(b[1]));
+  return [...byPath.entries()]
+    .sort((a, b) => worstOf(a[1]) - worstOf(b[1]))
+    .map(([path, group]) => ({
+      path,
+      group,
+      worst: Object.keys(KIND_ORDER).find((k) => KIND_ORDER[k] === worstOf(group))!,
+      sites: group.length,
+    }));
+}
 
+function renderImpacts(ordered: ImpactFile[], windows: Record<string, Window>): string {
   return ordered
-    .map(([path, group], idx) => {
+    .map(({ path, group, worst }, idx) => {
       const i = idx + 1;
-      const worst = Object.keys(KIND_ORDER).find((k) => KIND_ORDER[k] === worstOf(group))!;
       const win = windows[path] ?? null;
       const at = new Map<number, any[]>();
       for (const imp of group) {
@@ -367,7 +406,7 @@ function renderImpacts(impacts: any[], windows: Record<string, Window>): string 
         .sort((a, b) => (a.line ?? 1) - (b.line ?? 1))
         .map(
           (imp) =>
-            `<a class="jump ${cls(imp.kind)}" href="#imp-${fileId(path)}-${num(imp.line, 1)}">line ${num(imp.line, 1)}</a>`,
+            `<button class="jump ${cls(imp.kind)}" type="button" data-line="imp-${fileId(path)}-${num(imp.line, 1)}">line ${num(imp.line, 1)}</button>`,
         )
         .join(" ");
 
@@ -399,18 +438,22 @@ function renderImpacts(impacts: any[], windows: Record<string, Window>): string 
         body = parts.join("");
       }
 
+      // One impacted file on screen at a time, picked from the tree, the same
+      // way File changes works. It used to be every file stacked as a
+      // <details>, stepped through by a bar that scrolled off with the page.
       return `
-<details class="file impacted ${worst}" id="impact-${fileId(path)}"${i === 1 ? " open" : ""}>
-  <summary>
+<section class="file impacted ${worst}" id="impact-${fileId(path)}"${i === 1 ? "" : " hidden"}>
+  <div class="fhead">
     <span class="ix">[${pad2(i)}]</span>
     <span class="st ${worst}">${esc(KIND_LABEL[worst] ?? worst)}</span>
     <span class="fp">${esc(path)}</span>
     <span class="nb">${group.length}</span>
     <span class="cnt">not edited</span>
-  </summary>
+  </div>
   <div class="jumps">${group.length} impact site${group.length === 1 ? "" : "s"}: ${sites}</div>
   <div class="hunk full">${body}</div>
-</details>`;
+  ${FILE_NAV}
+</section>`;
     })
     .join("");
 }
@@ -787,7 +830,8 @@ export function renderReview(root: HTMLElement, review: Payload): void {
   const walkthroughs = review.walkthroughs ?? [];
   const windows = review.impactWindows ?? {};
 
-  const reached = new Set(impacts.map((i: any) => i.path)).size;
+  const reachedFiles = impactFiles(impacts);
+  const reached = reachedFiles.length;
   // num() per file, not just on the total: `0 + "<img…>"` concatenates.
   const adds = files.reduce((n: number, f: any) => n + num(f.additions), 0);
   const dels = files.reduce((n: number, f: any) => n + num(f.deletions), 0);
@@ -828,18 +872,15 @@ ${looseHtml}
 </nav>
 <div id="pane-files">
   <div class="flayout">
-    ${renderTree(files)}
+    ${renderTree(files, fileLeaf, "Changed files", "treeFilter")}
     <div class="fmain">${renderFiles(files, annotations, risks, skips)}</div>
   </div>
 </div>
 <div id="pane-blast" hidden>
-  <div class="stepper" id="stepper">
-    <button id="prevImp" aria-label="Previous impact">&#8249;</button>
-    <span id="impPos">impact 1 of ${impacts.length}</span>
-    <button id="nextImp" aria-label="Next impact">&#8250;</button>
-    <span class="sh" id="impWhere"></span>
+  <div class="flayout">
+    ${renderTree(reachedFiles, impactLeaf, "Impacted files", "impactFilter")}
+    <div class="fmain">${renderImpacts(reachedFiles, windows)}</div>
   </div>
-  ${renderImpacts(impacts, windows)}
 </div>
 <div id="pane-walk" hidden>${renderWalkthroughs(walkthroughs)}</div>
 </div>`;
@@ -885,10 +926,14 @@ function wire(root: HTMLElement): void {
 
   // ---- file tree ----------------------------------------------------------
 
-  const tree = root.querySelector<HTMLElement>(".tree");
-  if (tree) {
+  // One controller for both trees: File changes and Blast radius are the same
+  // shape, a tree beside one file at a time.
+  const wireTree = (paneId: string, onShow: (section: HTMLElement) => void = () => {}) => {
+    const pane = byId(paneId);
+    const tree = pane?.querySelector<HTMLElement>(".tree");
+    if (!pane || !tree) return;
     const rows = Array.from(tree.querySelectorAll<HTMLElement>(".tfb"));
-    const sections = Array.from(root.querySelectorAll<HTMLElement>("#pane-files .file"));
+    const sections = Array.from(pane.querySelectorAll<HTMLElement>(".fmain > .file"));
 
     // The tree is sorted alphabetically; the file shown first is the diff's
     // first. Those two orders disagree constantly, so the starting position
@@ -898,7 +943,7 @@ function wire(root: HTMLElement): void {
     // One file on screen at a time. A forty-file diff is thousands of lines of
     // page, and the tree is only navigation if the thing it navigates to is
     // the thing you end up looking at.
-    const showFile = (index: number) => {
+    const showFile = (index: number, scroll = true) => {
       const button = rows[index];
       if (!button) return;
       const wanted = button.dataset.target;
@@ -907,19 +952,30 @@ function wire(root: HTMLElement): void {
       });
       rows.forEach((r, i) => r.toggleAttribute("aria-current", i === index));
       current = index;
+      const shown = sections.find((section) => !section.hidden);
+      // Previous / next under the file go by the tree's order, the order the
+      // reader sees, and grey out at either end.
+      shown?.querySelectorAll<HTMLButtonElement>(".tgo").forEach((b) => {
+        const to = index + Number(b.dataset.d);
+        b.disabled = to < 0 || to >= rows.length;
+      });
+      if (shown) onShow(shown);
       // The previous file may have been scrolled deep; the next one must start
       // at its own top rather than halfway down.
-      root.querySelector("#pane-files")?.scrollIntoView?.({ block: "start" });
+      if (scroll) pane.scrollIntoView?.({ block: "start" });
     };
 
     rows.forEach((button, index) => {
       button.addEventListener("click", () => showFile(index));
     });
+    pane.querySelectorAll<HTMLButtonElement>(".tgo").forEach((b) => {
+      b.addEventListener("click", () => showFile(current + Number(b.dataset.d)));
+    });
 
-    // Same bracket keys the blast-radius stepper uses, so stepping through a
+    // The same bracket keys in both trees, so stepping through a
     // review is one idiom rather than two.
     document.addEventListener("keydown", (e) => {
-      if (byId("pane-files").hidden) return;
+      if (pane.hidden) return;
       const target = e.target as HTMLElement | null;
       if (target && target.tagName === "INPUT") return;  // typing in the filter
       if (e.key === "]") showFile(Math.min(rows.length - 1, current + 1));
@@ -937,7 +993,7 @@ function wire(root: HTMLElement): void {
       });
     });
 
-    const filter = tree.querySelector<HTMLInputElement>("#treeFilter");
+    const filter = tree.querySelector<HTMLInputElement>(".tfilter");
     const empty = tree.querySelector<HTMLElement>(".tnone");
     filter?.addEventListener("input", () => {
       const q = filter.value.trim().toLowerCase();
@@ -971,45 +1027,38 @@ function wire(root: HTMLElement): void {
         if (first >= 0) showFile(first);
       }
     });
-  }
+    showFile(current, false);
+  };
+
+  wireTree("pane-files");
 
   initFlows(root);
 
-  // An impacted file opens scrolled to its first affected line — scroll the
-  // file's own box, never the page.
-  function frame(d: Element) {
-    const box = d.querySelector<HTMLElement>(".hunk.full");
-    const hit = d.querySelector<HTMLElement>(".l.hit");
-    if (box && hit) box.scrollTop = Math.max(0, hit.offsetTop - box.clientHeight / 3);
-  }
-  root.querySelectorAll<HTMLDetailsElement>("#pane-blast details.impacted").forEach((d) => {
-    if (d.open) frame(d);
-    d.addEventListener("toggle", () => {
-      if (d.open) frame(d);
-    });
+  // An impacted file is shown framed on an affected line, by scrolling the
+  // file's own box: the whole file is there, but the reader came for the line.
+  const frame = (section: HTMLElement, hit = section.querySelector<HTMLElement>(".l.hit")) => {
+    const box = section.querySelector<HTMLElement>(".hunk.full");
+    if (!box || !hit) return;
+    section.querySelectorAll(".l.hit.focus").forEach((x) => x.classList.remove("focus"));
+    hit.classList.add("focus");
+    const top =
+      box.scrollTop + hit.getBoundingClientRect().top - box.getBoundingClientRect().top -
+      box.clientHeight / 3;
+    box.scrollTop = Math.max(0, top);
+  };
+  wireTree("pane-blast", (section) => frame(section));
+  // "line 40" under a file's header frames that line, inside the file's box.
+  byId("pane-blast")?.addEventListener("click", (e) => {
+    const jump = (e.target as HTMLElement).closest<HTMLElement>(".jump");
+    if (!jump) return;
+    const section = jump.closest<HTMLElement>(".file");
+    const hit = jump.dataset.line ? document.getElementById(jump.dataset.line) : null;
+    if (section && hit) frame(section, hit);
   });
-
-  // Walk impact sites with the < > arrows.
-  const SITES = [...root.querySelectorAll<HTMLElement>("#pane-blast .l.hit")];
-  let at = -1;
-  function goto(i: number) {
-    if (!SITES.length) return;
-    at = (i + SITES.length) % SITES.length;
-    const el = SITES[at];
-    (el.closest("details") as HTMLDetailsElement).open = true;
-    SITES.forEach((s) => s.classList.remove("focus"));
-    el.classList.add("focus");
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    byId("impPos").textContent = `impact ${at + 1} of ${SITES.length}`;
-    const f = el.closest("details")!.querySelector(".fp");
-    byId("impWhere").textContent = f ? f.textContent! : "";
-  }
-  byId("prevImp")?.addEventListener("click", () => goto(at - 1));
-  byId("nextImp")?.addEventListener("click", () => goto(at + 1));
-  document.addEventListener("keydown", (e) => {
-    if (byId("pane-blast").hidden) return;
-    if (e.key === "]") goto(at + 1);
-    if (e.key === "[") goto(at - 1);
+  // The pane starts hidden, so the first file can only be framed once shown.
+  root.querySelector<HTMLElement>('.mt[data-t="blast"]')?.addEventListener("click", () => {
+    const shown = root.querySelector<HTMLElement>("#pane-blast .fmain > .file:not([hidden])");
+    if (shown) frame(shown);
   });
 
   // Prev / New / Changes panes inside one annotation.

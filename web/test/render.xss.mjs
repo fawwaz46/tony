@@ -91,7 +91,8 @@ const problems = [];
 if (injected.length) problems.push(`${injected.length} element(s) injected from the payload`);
 // The page must still be usable, not merely inert.
 if (!d.querySelector("h1")) problems.push("page did not render");
-if (!d.querySelectorAll("details.file").length) problems.push("files did not render");
+if (!d.querySelectorAll("#pane-files .file").length) problems.push("files did not render");
+if (!d.querySelectorAll("#pane-blast .file.impacted").length) problems.push("impacts did not render");
 
 if (problems.length) {
   console.error("FAIL:", problems.join("; "));

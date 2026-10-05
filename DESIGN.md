@@ -220,9 +220,14 @@ lines highlighted, two lines of padding either side, read from disk.
 **State table** — `[ STATE ]` eyebrow, key on its own line in `--ink-4`, `before → after` with
 the before struck through in `--ink-4` and the after in accent. Three entries maximum.
 
-**Blast radius** — whole impacted files, worst-first (`breaks` → `behavior-change` →
-`compatible`). The worst file opens by default and its own scroll box is framed to the affected
-line; the page itself never scrolls.
+**Blast radius** — the same shape as File changes: a tree of impacted files beside one file at a
+time. Each tree row marks how the file is reached (`!` breaks in `--neg`, `~` behaves
+differently in `--info`, `=` compatible in `--ink-4`) and how many sites it has. The worst file
+(`breaks` → `behavior-change` → `compatible`) is shown first, its own scroll box framed to the
+affected line; "line N" under the header frames that line instead.
+
+Both panes end each file with Previous file / Next file, in the tree's order, and `[` `]` step
+the same way.
 
 ---
 

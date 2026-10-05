@@ -107,16 +107,11 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 /* ---- file rows: hairlines, not cards ---- */
 .file{border-bottom:1px solid var(--rule);background:var(--ground)}
 .file:first-child{border-top:1px solid var(--rule)}
-/* The changed-file header is a heading, not a control — the tree does the
-   opening. Blast radius still uses <details>, so the summary rules stay. */
-.file .fhead,.file summary{display:flex;align-items:center;gap:.85rem;padding:.6rem .25rem;
-  font-family:var(--mono);font-size:.75rem;flex-wrap:wrap;list-style:none;color:var(--ink-3)}
-.file summary{cursor:pointer}
-.file .fhead{border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--ground);
-  z-index:1}
-.file summary::-webkit-details-marker{display:none}
-.file summary:hover{background:var(--s1)}
-.file[open] summary{border-bottom:1px solid var(--rule)}
+/* A file's header is a heading, not a control: in both panes the tree does
+   the choosing. */
+.file .fhead{display:flex;align-items:center;gap:.85rem;padding:.6rem .25rem;
+  font-family:var(--mono);font-size:.75rem;flex-wrap:wrap;color:var(--ink-3);
+  border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--ground);z-index:1}
 .ix{color:var(--ink-4);letter-spacing:.06em;font-size:.7rem;flex:none}
 .st{font-size:.6rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-4);flex:none}
 .st.added{color:var(--pos)}
@@ -136,7 +131,7 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
   user-select:none;-webkit-user-select:none}
 .l.h{background:var(--s2);color:var(--ink-4);padding-top:.25rem;padding-bottom:.25rem;
   border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-.file[open] .hunk > .l.h:first-child{border-top:0}
+.file .fhead + .hunk > .l.h:first-child{border-top:0}
 .l.a{background:var(--pos-bg);color:var(--ink)}
 .l.d{background:var(--neg-bg);color:var(--ink-3)}
 .bin{margin:0;padding:.9rem .25rem;color:var(--ink-4);font-size:.8rem;
@@ -181,7 +176,8 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .file.impacted .st.compatible{color:var(--ink-4)}
 .jumps{padding:.6rem .25rem;font-family:var(--mono);font-size:.68rem;color:var(--ink-4);
   display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--rule)}
-.jump{color:var(--info);text-decoration:none;border-bottom:1px solid transparent}
+.jump{color:var(--info);text-decoration:none;border:0;border-bottom:1px solid transparent;
+  background:none;font:inherit;padding:0;cursor:pointer}
 .jump:hover{border-bottom-color:currentColor}
 .jump.breaks{color:var(--neg)}
 .jump.compatible{color:var(--ink-3)}
@@ -196,13 +192,6 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .ann.imp.compatible .t{color:var(--ink-3)}
 .ann .via{font-weight:400;text-transform:none;letter-spacing:.01em;color:var(--ink-4);
   font-size:.68rem}
-.stepper{position:sticky;top:0;z-index:4;display:flex;align-items:center;gap:.75rem;
-  background:var(--ground);border-bottom:1px solid var(--rule);padding:.7rem .25rem;
-  margin-bottom:0;font-family:var(--mono);font-size:.7rem;color:var(--ink-4)}
-.stepper button{font:400 .8rem/1 var(--mono);background:none;border:1px solid var(--rule-2);
-  color:var(--ink-3);cursor:pointer;padding:.25em .6em}
-.stepper button:hover{border-color:var(--rule-3);color:var(--ink)}
-.stepper .sh{color:var(--ink-3);overflow-wrap:anywhere;min-width:0}
 
 /* ---- flows ----
    Swiss: a strict grid, heavy rules where a section starts, everything
@@ -429,11 +418,11 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .tree{position:sticky;top:0;max-height:100vh;overflow-y:auto;overscroll-behavior:contain;
   padding:1rem .25rem 2rem 0;border-right:1px solid var(--rule);min-width:0}
 .tfil{position:sticky;top:0;background:var(--ground);padding-bottom:.6rem;z-index:1}
-#treeFilter{width:100%;background:var(--s1);border:1px solid var(--rule-2);color:var(--ink);
+.tfilter{width:100%;background:var(--s1);border:1px solid var(--rule-2);color:var(--ink);
   font:400 .75rem/1 var(--mono);padding:.55rem .65rem;border-radius:0;
   -webkit-appearance:none;appearance:none}
-#treeFilter::placeholder{color:var(--ink-4)}
-#treeFilter:focus{outline:none;border-color:var(--rule-3);background:var(--s2)}
+.tfilter::placeholder{color:var(--ink-4)}
+.tfilter:focus{outline:none;border-color:var(--rule-3);background:var(--s2)}
 .tn,.tsub{list-style:none;margin:0;padding:0}
 .tsub{padding-left:.7rem;border-left:1px solid var(--rule);margin-left:.45rem}
 .tdh,.tfb{display:flex;align-items:center;gap:.45rem;width:100%;background:none;border:0;
@@ -452,6 +441,9 @@ h2{font:500 .68rem/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
 .ti.added{color:var(--pos)}
 .ti.deleted{color:var(--neg)}
 .ti.renamed{color:var(--info)}
+.ti.breaks{color:var(--neg)}
+.ti.behavior-change{color:var(--info)}
+.ti.compatible{color:var(--ink-4)}
 .tct{flex:none;font-size:.65rem;color:var(--ink-4);letter-spacing:.02em}
 /* Current file: the accent means "changed" everywhere else, so selection is a
    contrast step instead. */
