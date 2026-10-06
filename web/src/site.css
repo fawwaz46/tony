@@ -130,6 +130,7 @@
    pushes the page wider than a phone. */
 .three > div { padding: 1.5rem 1.5rem 1.75rem; border-right: 1px solid var(--rule); min-width: 0; }
 .three.two { grid-template-columns: repeat(2, 1fr); }
+.three.four { grid-template-columns: repeat(4, 1fr); }
 .three > div:last-child { border-right: 0; }
 .three > div:first-child { padding-left: 0; }
 .three .n { font-family: var(--mono); font-size: .7rem; color: var(--ink-4);
@@ -142,7 +143,7 @@
      left the two-up section at two columns on a phone — and its 404px + 191px
      tracks set the width of the whole document, clipping every paragraph on
      the page at the right edge. */
-  .three, .three.two { grid-template-columns: 1fr; }
+  .three, .three.two, .three.four { grid-template-columns: 1fr; }
   .three > div { border-right: 0; border-bottom: 1px solid var(--rule); padding-left: 0; }
   .three > div:last-child { border-bottom: 0; }
 }
@@ -321,4 +322,3 @@
 /* A prompt is a sentence, not a command: it wraps at word breaks and stays
    whole, rather than scrolling out of a narrow column. */
 .cmd.prompt code { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
-.uses .three p b { white-space: nowrap; }
