@@ -46,17 +46,18 @@ const here = Astro.url.pathname + Astro.url.search;
                 {user.avatarUrl && <img src={user.avatarUrl} alt="" width="20" height="20" />}
                 {user.login}
               </span>
+              <a class="btn quiet" href={Astro.url.pathname === "/login" ? here : `/login?next=${encodeURIComponent(here)}`}>
+                Switch account
+              </a>
               <form method="POST" action="/api/auth/signout">
                 <input type="hidden" name="next" value="/" />
-                <button class="plain" type="submit">Sign out</button>
+                <button class="plain" type="submit">Log out</button>
               </form>
             </>
           ) : (
-            /* Sign-in is hidden while publishing is off by default and the
-               domain is pending a Safe Browsing review — the link led straight
-               to a browser interstitial. The route still works for anyone who
-               is already signed in, and for /reviews. */
-            null
+            <a class="btn" href={Astro.url.pathname === "/login" ? here : `/login?next=${encodeURIComponent(here)}`}>
+              Log in
+            </a>
           )
         }
       </nav>
